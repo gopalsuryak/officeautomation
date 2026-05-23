@@ -3,6 +3,7 @@
 
 > **Prepared:** May 23, 2026  
 > **Branch audited:** `production-readiness-wave13` @ commit `950bb0f`  
+> **Fixes applied:** commit `45345dd` (Wave 14 Audit Fixes — 8 issues closed)  
 > **Scope:** `saas/` (45 Python modules, ~16,300 LOC) + `ca-agent/` + frontend templates  
 > **Method:** Static code review, route inventory, dependency tracing, security pattern matching
 
@@ -12,16 +13,17 @@
 
 CA Assist is **architecturally sound and structurally consistent** — tenant isolation is enforced uniformly, secrets use Fernet at rest, CSRF + security headers are present, and the codebase follows a clear module-per-feature pattern with 105 routes across 45 modules. Wave 12 and Wave 13 closed all previously identified critical bugs, and Wave 14 added two well-scoped modules (WhatsApp + Playwright).
 
-However, this audit identifies **27 issues across 6 severity bands**, with **3 production-blocking bugs**, **8 high-severity gaps**, and **16 medium/low-severity items**. The most pressing finding is a **CSP/CSRF interaction that will silently break the voice assistant in production** (B-02), followed by missing **brute-force protection on login** (G-01) and an **upload-size DoS vector** (B-03).
+This audit identified **27 issues across 6 severity bands**. Commit `45345dd` closed 8 of those issues — all 3 blockers, 2 of 8 high-severity, 2 of 10 medium, 1 of 6 low, and 1 dependency fix. **19 issues remain open.**
 
-| Severity | Count | Examples |
-|---|---|---|
-| 🔴 **Blocker (production-breaking)** | 3 | CSP blocks Bootstrap CDN, CSRF blocks Voice Assistant, upload DoS |
-| 🟠 **High** | 8 | No login rate-limit, no password reset, raw DB errors flashed, orchestrator stub |
-| 🟡 **Medium** | 10 | No pagination, fragile flash sanitizer, SQLite no-WAL, missing tests |
-| 🔵 **Low** | 6 | Naming inconsistency, dead code, doc drift |
-| 💡 **Architecture** | — | Synchronous Playwright in request thread, SQLite write contention |
-| 🟢 **Positive findings** | — | Tenant isolation, Fernet encryption, CSRF middleware, audit logs |
+| Severity | Found | Fixed (`45345dd`) | Remaining |
+|---|---|---|---|
+| 🔴 **Blocker** | 3 | ✅ 3 | 0 |
+| 🟠 **High** | 8 | ✅ 2 (G-04, G-06) | 6 |
+| 🟡 **Medium** | 10 | ✅ 2 (M-01, M-02) | 8 |
+| 🔵 **Low** | 6 | ✅ 1 (L-01) | 5 |
+| 📦 **Dependency** | 1 | ✅ 1 (`cryptography`) | 0 |
+| 💡 **Architecture** | — | — | Open |
+| 🟢 **Positive findings** | — | — | — |
 
 ---
 
@@ -67,7 +69,7 @@ However, this audit identifies **27 issues across 6 severity bands**, with **3 p
 
 ### B-01 — Content Security Policy will block Bootstrap CDN in production
 **Files:** [saas/security.py](saas/security.py#L107-L117), [saas/templates/base.html](saas/templates/base.html#L7-L9)  
-**Severity:** 🔴 Blocker
+**Severity:** ~~🔴 Blocker~~ ✅ **Fixed in `45345dd`** — `cdn.jsdelivr.net` added to `script-src`, `style-src`, `font-src`
 
 The CSP in `security.security_headers()` sets:
 ```python
@@ -90,7 +92,7 @@ But [base.html](saas/templates/base.html#L7-L9) loads Bootstrap CSS, Bootstrap I
 
 ### B-02 — CSRF middleware silently breaks Voice Assistant endpoints
 **Files:** [saas/app.py](saas/app.py#L190-L205), [saas/static/js/voice_assistant.js](saas/static/js/voice_assistant.js#L52-L60)  
-**Severity:** 🔴 Blocker
+**Severity:** ~~🔴 Blocker~~ ✅ **Fixed in `45345dd`** — `getCsrfToken()` helper added to `base.html` meta tag; `X-CSRFToken` header added to all `fetch` calls in `voice_assistant.js`
 
 The CSRF middleware `_protect_unsafe_requests` blocks every POST/PUT/PATCH/DELETE that does not present a CSRF token in either `request.form['csrf_token']`, header `X-CSRFToken`, or header `X-CSRF-Token`.
 
@@ -113,7 +115,7 @@ const response = await fetch("/voice-assistant/parse", {
 
 ### B-03 — Manual upload size check happens AFTER full file is buffered
 **Files:** [saas/manual_uploads.py](saas/manual_uploads.py#L104-L123), [saas/app.py](saas/app.py#L1419-L1438)  
-**Severity:** 🔴 Blocker (DoS vector)
+**Severity:** ~~🔴 Blocker (DoS vector)~~ ✅ **Fixed in `45345dd`** — `MAX_CONTENT_LENGTH = 32 MB` set on Flask app at startup
 
 `save_manual_upload()` calls `_get_file_size_bytes()` only AFTER Flask has already received the entire upload body into memory. No `app.config["MAX_CONTENT_LENGTH"]` is set anywhere in `app.py`.
 
@@ -126,6 +128,8 @@ if file_size_bytes > MAX_FILE_SIZE_BYTES:  # 25 MB check
 **Impact:** A logged-in attacker (any tenant user) can POST a 2 GB body to `/accounting-connectors/<id>/upload`. Flask will buffer it entirely (to memory or temp file depending on configuration) before our 25 MB check runs. With concurrent requests, this can exhaust server memory or disk.
 
 **Fix:** Set `app.config["MAX_CONTENT_LENGTH"] = 26 * 1024 * 1024` at startup. Flask will then 413 large uploads before reading them into memory.
+
+> ℹ️ All 3 blockers resolved. No production-blocking issues remain.
 
 ---
 
@@ -161,7 +165,7 @@ Confirmed previously in AUDIT_AND_ROADMAP.md as WORK-01. Still not implemented. 
 
 ### G-04 — Raw database errors flashed to UI
 **File:** [saas/app.py](saas/app.py#L2741-L2744)  
-**Severity:** 🟠 High (information disclosure)
+**Severity:** ~~🟠 High (information disclosure)~~ ✅ **Fixed in `45345dd`** — error handlers now log full error server-side and show a generic message to users
 
 ```python
 @app.errorhandler(sqlite3.OperationalError)
@@ -171,7 +175,7 @@ def _db_error(error):
 
 A constraint violation or column-not-found error from any query will leak schema details to the end user. The custom `flash()` wrapper only sanitises strings containing the literal word `"traceback"` or `"exception"`, neither of which appear in typical sqlite errors like `no such column: foo`.
 
-**Fix:** Log the full error server-side; flash a generic message like "A database error occurred. Please retry or contact support."
+**Fix:** Log the full error server-side; flash a generic message like "A database error occurred. Please retry or contact support." ✅ Applied.
 
 ---
 
@@ -187,7 +191,7 @@ A constraint violation or column-not-found error from any query will leak schema
 
 ### G-06 — Custom `flash()` sanitiser is fragile
 **File:** [saas/app.py](saas/app.py#L53-L66)  
-**Severity:** 🟠 High
+**Severity:** ~~🟠 High~~ ✅ **Fixed in `45345dd`** — sanitisation moved to error handlers before `flash()` is called; `flash()` itself simplified
 
 ```python
 if category in {"warning", "danger", "error"} and (
@@ -200,7 +204,7 @@ if category in {"warning", "danger", "error"} and (
 
 The third condition is logically tautological (the inner check duplicates the outer two). The sanitiser misses common leak patterns: SQL errors, file paths, stack frames without the word "traceback", `KeyError: 'foo'`, etc.
 
-**Fix:** Reverse the model — only allow a curated set of safe messages. For all unexpected errors, log internally and flash a generic message.
+**Fix:** Reverse the model — only allow a curated set of safe messages. For all unexpected errors, log internally and flash a generic message. ✅ Applied.
 
 ---
 
@@ -216,11 +220,11 @@ Comments in 4 locations note: "TODO: Phase 3 should dedupe/upsert by determinist
 
 ### G-08 — No `MAX_CONTENT_LENGTH` set on Flask app
 **File:** [saas/app.py](saas/app.py#L51-L100)  
-**Severity:** 🟠 High (related to B-03)
+**Severity:** ~~🟠 High~~ ✅ **Fixed in `45345dd`** (as part of B-03 fix) — `MAX_CONTENT_LENGTH = 32 MB` set globally.
 
 Without `app.config["MAX_CONTENT_LENGTH"]`, any large body will be buffered. Affects every POST route, not just uploads.
 
-**Fix:** Set a global cap (e.g. 32 MB) at startup.
+**Fix:** Set a global cap (e.g. 32 MB) at startup. ✅ Applied.
 
 ---
 
@@ -228,21 +232,21 @@ Without `app.config["MAX_CONTENT_LENGTH"]`, any large body will be buffered. Aff
 
 ### M-01 — List views have no pagination
 **Files:** `dashboard_service.py`, `email_qa_dashboard.py`, `gst_dashboard.py`, `email_operations.py`, audit logs in `app.py`  
-**Severity:** 🟡 Medium
+**Severity:** ~~🟡 Medium~~ ✅ **Fixed in `45345dd`** — `paginate_query()` helper added to `db.py` with `LIMIT`/`OFFSET` and page metadata
 
 All list endpoints use either no LIMIT or a hardcoded LIMIT (typically 100). At 1,000+ rows per tenant, performance and UX will degrade.
 
-**Fix:** Add `?page=` and `?per_page=` query params with a shared helper.
+**Fix:** Add `?page=` and `?per_page=` query params with a shared helper. ✅ Applied.
 
 ---
 
 ### M-02 — SQLite is not in WAL mode
 **File:** [saas/db.py](saas/db.py#L40-L52)  
-**Severity:** 🟡 Medium
+**Severity:** ~~🟡 Medium~~ ✅ **Fixed in `45345dd`** — `PRAGMA journal_mode = WAL` added at every connection open
 
 `get_db()` opens a connection without `PRAGMA journal_mode=WAL`. Default rollback-journal mode serializes all writes and stalls concurrent reads during writes. With 5+ concurrent users, write contention will visibly slow the app.
 
-**Fix:** Add `conn.execute("PRAGMA journal_mode=WAL")` and `PRAGMA synchronous=NORMAL` at connection open. Plan a Postgres migration before exceeding 50 concurrent users.
+**Fix:** Add `conn.execute("PRAGMA journal_mode=WAL")` and `PRAGMA synchronous=NORMAL` at connection open. Plan a Postgres migration before exceeding 50 concurrent users. ✅ WAL applied.
 
 ---
 
@@ -326,7 +330,7 @@ Logging uses bare `logging.warning(...)` calls. No request IDs, no tenant ID pro
 
 ### L-01 — `whatsapp_queue.py` calls `_normalise_phone` from `whatsapp_sender` via leading-underscore name
 **File:** [saas/whatsapp_queue.py](saas/whatsapp_queue.py#L78)  
-Violates module-private convention (`_normalise_phone` is private to `whatsapp_sender.py`). Promote to public `normalize_phone()`.
+~~Violates module-private convention (`_normalise_phone` is private to `whatsapp_sender.py`). Promote to public `normalize_phone()`.~~ ✅ **Fixed in `45345dd`** — `normalise_phone()` (public) exported; `_normalise_phone` kept as alias for backward compat.
 
 ### L-02 — Mixed indentation (tabs in `app.py`, spaces in modules)
 **File:** [saas/app.py](saas/app.py)  
@@ -445,6 +449,7 @@ playwright>=1.44.0
 | `xlrd>=2.0.1` | Only supports .xls (legacy), not .xlsx. May be unused if only `openpyxl` reads spreadsheets. Verify and remove if unused. |
 | No pinned versions | All `>=` constraints; production builds will drift. Pin exact versions in a `requirements-lock.txt`. |
 | No security advisory check | No `pip-audit` or `safety check` in any CI step. |
+| ~~`cryptography` missing from `requirements.txt`~~ | ✅ **Fixed in `45345dd`** — `cryptography>=42.0.0` added. |
 
 **ca-agent/requirements.txt** was not audited in this pass.
 
@@ -452,34 +457,45 @@ playwright>=1.44.0
 
 ## 10. Prioritised Remediation Plan
 
-### Immediate (before next production deploy)
-1. **B-01** — Update CSP to allow `cdn.jsdelivr.net` (or self-host Bootstrap).
-2. **B-02** — Add `X-CSRFToken` header to `voice_assistant.js` and any future JSON `fetch` clients.
-3. **B-03** — Set `app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024` in `app.py`.
-4. **G-04** — Replace `flash(f"Database error: {error}")` with generic message; log full error server-side.
-5. **Add `cryptography` to `requirements.txt`** — currently has a silent fallback that will fail at first secret encryption call in a fresh install.
+### ✅ Immediate — All closed in `45345dd`
+1. ~~**B-01**~~ ✅ CSP updated — `cdn.jsdelivr.net` allowed.
+2. ~~**B-02**~~ ✅ `X-CSRFToken` header added to `voice_assistant.js` via `getCsrfToken()` helper.
+3. ~~**B-03**~~ ✅ `MAX_CONTENT_LENGTH = 32 MB` set.
+4. ~~**G-04**~~ ✅ Raw DB error sanitised; generic message flashed.
+5. ~~**cryptography** missing~~ ✅ `cryptography>=42.0.0` added to `requirements.txt`.
+6. ~~**G-06**~~ ✅ Flash sanitiser simplified; error handlers own sanitisation.
+7. ~~**M-01**~~ ✅ `paginate_query()` helper added to `db.py`.
+8. ~~**M-02**~~ ✅ SQLite WAL mode enabled on every connection.
+9. ~~**L-01**~~ ✅ `normalise_phone()` exported as public function.
 
-### Short-term (next sprint)
-6. **G-01** — Add login brute-force protection (table-based lockout + per-IP counter).
-7. **G-02** — Implement password-reset flow with signed token + reset email.
-8. **G-03** — Implement signup email verification.
-9. **M-02** — Enable SQLite WAL mode at connection open.
-10. **G-06** — Rewrite `flash()` sanitiser as an allow-list of safe messages.
-11. **G-07** — Implement manual-upload dedupe (composite key) and full-file import.
+### Short-term (next sprint) — 6 open high-severity items
+1. **G-01** — Add login brute-force protection (table-based lockout + per-IP counter).
+2. **G-02** — Implement password-reset flow with signed token + reset email.
+3. **G-03** — Implement signup email verification.
+4. **G-05** — Remove/replace `AgentOrchestrator` base class stubs.
+5. **G-07** — Implement manual-upload dedupe (composite key) and full-file import.
+6. **G-08** ✅ Closed as part of B-03 fix.
 
-### Medium-term (next quarter)
-12. **M-01** — Add pagination helper used by every list view.
-13. **M-06** — Move Playwright verification to a background worker.
-14. **A-03** — Adopt RQ or Celery for background jobs (emails, WhatsApp, accounting syncs, Playwright).
-15. **M-09** — Refactor `app.py` into Flask blueprints.
-16. **M-05** — Adopt Alembic for versioned schema migrations.
-17. **A-04** — Add Razorpay + Twilio + Meta webhook receivers.
-18. **Add integration test suite** — at minimum, one smoke test per route.
+### Medium-term (next quarter) — 8 open medium items
+1. **M-03** — Standardise route style; pick trailing-slash policy; confirm legacy alias.
+2. **M-04** — Document `X-CSRFToken` header pattern for all future JSON fetch clients.
+3. **M-05** — Adopt Alembic for versioned schema migrations.
+4. **M-06** — Move Playwright verification to a background worker.
+5. **M-07** — Add retry / scheduled-send to WhatsApp queue.
+6. **M-08** — Split `email_queue.py` (821 LOC) into repo + workflow modules.
+7. **M-09** — Refactor `app.py` into Flask blueprints.
+8. **M-10** — Add structured logging with request ID and JSON formatter.
+9. **A-03** — Adopt RQ or Celery for background jobs.
+10. **A-04** — Add Razorpay + Twilio + Meta webhook receivers.
+11. **Add integration test suite** — smoke test per route (catches B-01/B-02 class regressions).
 
 ### Long-term
-19. **A-01** — Migrate from SQLite to PostgreSQL.
-20. **A-02** — Extract Playwright into a dedicated microservice.
-21. **A-05** — Move uploads to S3-compatible object storage.
+1. **A-01** — Migrate from SQLite to PostgreSQL.
+2. **A-02** — Extract Playwright into a dedicated microservice.
+3. **A-05** — Move uploads to S3-compatible object storage.
+4. Remove unused `twilio` SDK from `requirements.txt` (or start using it).
+5. Verify and remove `xlrd` if only `.xlsx` is used via `openpyxl`.
+6. Pin exact versions in `requirements-lock.txt`.
 
 ---
 
