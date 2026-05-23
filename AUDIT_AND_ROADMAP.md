@@ -3,7 +3,8 @@
 > Prepared: May 23, 2026  
 > Scope: Full codebase review of `saas/` + `ca-agent/` + docs  
 > **Wave 12 audit (15 bugs):** all resolved on `production-readiness-wave13` (commit `8f58d84`)  
-> **Wave 13 re-audit (7 bugs):** all resolved on `production-readiness-wave13` (commit `c11f30b`)
+> **Wave 13 re-audit (7 bugs):** all resolved on `production-readiness-wave13` (commit `c11f30b`)  
+> **Wave 14 — WhatsApp + Chromium integration:** implemented on `production-readiness-wave13`
 
 ---
 
@@ -13,11 +14,12 @@
 2. [Medium Bugs (Wave 12)](#2-medium-bugs)
 3. [Minor / Low-Priority Bugs (Wave 12)](#3-minor--low-priority-bugs)
 4. [Wave 13 New Bugs](#4-wave-13-new-bugs)
-5. [Remaining Work — Short Term (Next Sprint)](#5-remaining-work--short-term-next-sprint)
-6. [Remaining Work — Medium Term](#6-remaining-work--medium-term)
-7. [Remaining Work — Long Term / Roadmap](#7-remaining-work--long-term--roadmap)
-8. [Security & Hardening Gaps](#8-security--hardening-gaps)
-9. [Test Coverage Gaps](#9-test-coverage-gaps)
+5. [Wave 14 — WhatsApp + Chromium Integration](#5-wave-14--whatsapp--chromium-integration)
+6. [Remaining Work — Short Term (Next Sprint)](#6-remaining-work--short-term-next-sprint)
+7. [Remaining Work — Medium Term](#7-remaining-work--medium-term)
+8. [Remaining Work — Long Term / Roadmap](#8-remaining-work--long-term--roadmap)
+9. [Security & Hardening Gaps](#9-security--hardening-gaps)
+10. [Test Coverage Gaps](#10-test-coverage-gaps)
 
 ---
 
@@ -399,7 +401,116 @@ Also document what action strings are written to `audit_logs` for connector even
 
 ---
 
-## 5. Remaining Work — Short Term (Next Sprint)
+## 5. Wave 14 — WhatsApp + Chromium Integration
+
+> **Status:** ✅ Fully implemented  
+> **Branch:** `production-readiness-wave13`  
+> **New files:** `whatsapp_sender.py`, `whatsapp_queue.py`, `portal_browser.py`  
+> **DB:** Table 31 `whatsapp_send_queue` added to `db.py`
+
+### WA-01 — WhatsApp Sender (`saas/whatsapp_sender.py`)
+**Status:** ✅ Built  
+**Dual-provider support:** Twilio (via REST) + Meta Cloud API (Graph v19.0)  
+Provider is auto-detected from environment variables if `WHATSAPP_PROVIDER` is not set.
+
+**Key functions:**
+- `send_whatsapp_message(to_phone, body, media_url, provider)` — primary send API
+- `is_whatsapp_configured()` — safe bool check for UI guards
+- `get_whatsapp_provider()` — returns active provider name
+
+**Required environment variables:**
+
+| Variable | Provider | Purpose |
+|---|---|---|
+| `WHATSAPP_PROVIDER` | both | `"twilio"` or `"meta"` (auto-detected if absent) |
+| `TWILIO_ACCOUNT_SID` | Twilio | Account SID |
+| `TWILIO_AUTH_TOKEN` | Twilio | Auth token |
+| `TWILIO_WHATSAPP_FROM` | Twilio | Sender number e.g. `whatsapp:+14155238886` |
+| `WHATSAPP_PHONE_ID` | Meta | Phone Number ID from Meta Business |
+| `WHATSAPP_API_TOKEN` | Meta | Permanent or system user token |
+
+---
+
+### WA-02 — WhatsApp Send Queue (`saas/whatsapp_queue.py`)
+**Status:** ✅ Built  
+
+Mirrors the `email_queue.py` pattern with an approval gate before sending.
+
+**Status flow:** `queued` → `approved_to_send` → `sent` / `failed` / `cancelled`
+
+**Key functions:**
+- `queue_whatsapp_from_draft(tenant_id, draft_id, to_phone, user_id, media_url)`
+- `approve_whatsapp_queue_item(tenant_id, queue_id, user_id)`
+- `send_approved_whatsapp_queue_item(tenant_id, queue_id, user_id)`
+- `cancel_whatsapp_queue_item(tenant_id, queue_id, reason)`
+- `list_whatsapp_queue(tenant_id, filters)` + `get_whatsapp_queue_summary(tenant_id)`
+
+**New routes in `app.py`:**
+- `GET /whatsapp-queue/` — queue list with KPI cards
+- `GET /whatsapp-queue/<id>` — detail with approve/send/cancel actions
+- `POST /whatsapp-queue/from-draft/<draft_id>` — queue from reviewed draft
+- `POST /whatsapp-queue/<id>/approve`
+- `POST /whatsapp-queue/<id>/send`
+- `POST /whatsapp-queue/<id>/cancel`
+
+**New templates:** `whatsapp_queue.html`, `whatsapp_queue_detail.html`
+
+---
+
+### WA-03 — DB Table `whatsapp_send_queue`
+**Status:** ✅ Built (Table 31 in `db.py`)  
+
+Schema includes: `tenant_id`, `client_entity_id`, `task_id`, `draft_id`, `to_phone`, `body`, `media_url`, `status`, `provider`, `provider_message_id`, `queued_by`, timestamps, `error_message`, `metadata_json`.
+
+Backward-compatible migration checks for `media_url` and `provider_message_id` columns on app start.
+
+---
+
+### BROWSER-01 — Portal Browser / Chromium Automation (`saas/portal_browser.py`)
+**Status:** ✅ Built  
+**Requires:** `playwright>=1.44.0` + `playwright install chromium` (see setup notes)
+
+Headless Chromium automation using synchronous Playwright. Handles login verification and compliance data fetching for government portals.
+
+**Supported portals:** GST (services.gst.gov.in), Income Tax (eportal.incometax.gov.in), MCA (www.mca.gov.in), TDS (www.tdscpc.gov.in), EPFO, ESIC, Zoho Books.
+
+**Status codes returned:**
+- `success` — login verified
+- `failed` — login failed
+- `requires_captcha` — CAPTCHA detected, manual action needed
+- `requires_otp` — OTP page detected
+- `portal_unreachable` — portal down / timeout
+- `not_configured` — Playwright not installed
+
+**Key functions:**
+- `verify_portal_credentials(portal_type, username, password, portal_url)` — standalone
+- `run_portal_verification(tenant_id, credential_id)` — DB-integrated, updates `last_verified_at` + `last_login_status`
+- `fetch_portal_data(portal_type, username, password, portal_url, gstin, pan)` — extracts compliance data
+
+**Security:** URL domain allowlist enforced in `_validate_portal_url()`. Credentials decrypted in-memory only; never logged.
+
+**New routes in `app.py`:**
+- `POST /credentials/<id>/verify-live` — triggers Chromium verification, returns JSON result
+- `POST /portal-browser/fetch/<credential_id>` — fetches compliance data, returns JSON
+
+**UI change:** `credential_detail.html` — "Auto Login - Coming Soon" button replaced with functional "Verify Live via Browser" button (async JS fetch, shows result inline).
+
+**Required environment variables:**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORTAL_BROWSER_HEADLESS` | `true` | Run Chromium in headless mode |
+| `PORTAL_BROWSER_TIMEOUT_MS` | `30000` | Navigation timeout in milliseconds |
+| `CA_ASSIST_ENCRYPTION_KEY` | — | Fernet key for decrypting portal passwords (existing) |
+
+**Setup after pip install:**
+```
+playwright install chromium
+```
+
+---
+
+## 6. Remaining Work — Short Term (Next Sprint)
 <!-- formerly section 4 -->
 
 ### WORK-01 — Password Reset / Forgot Password Flow
@@ -502,7 +613,7 @@ The `subscriptions` table has a `status` column but nothing ever sets it to `exp
 
 ---
 
-## 6. Remaining Work — Medium Term
+## 7. Remaining Work — Medium Term
 
 ### WORK-09 — Zoho Books OAuth Connector
 **Status:** Architecture defined, not implemented  
@@ -588,7 +699,7 @@ The `subscriptions` table has a `status` column but nothing ever sets it to `exp
 
 ---
 
-## 7. Remaining Work — Long Term / Roadmap
+## 8. Remaining Work — Long Term / Roadmap
 
 ### WORK-17 — Gmail OAuth Sending
 Implement Gmail OAuth consent flow, token lifecycle, and dispatch adapter. Mirror SMTP safety controls (approved-only, one-click, audit trail). Requires `WORK-08` (credential encryption) first.
@@ -625,7 +736,7 @@ One-click export of all audit logs, review actions, and AI outputs for a given t
 
 ---
 
-## 8. Security & Hardening Gaps
+## 9. Security & Hardening Gaps
 
 | ID | Gap | File | Priority | Status |
 |----|-----|------|----------|--------|
@@ -643,7 +754,7 @@ One-click export of all audit logs, review actions, and AI outputs for a given t
 
 ---
 
-## 9. Test Coverage Gaps
+## 10. Test Coverage Gaps
 
 | Area | Current Coverage | Gap |
 |------|-----------------|-----|

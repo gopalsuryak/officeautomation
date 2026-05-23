@@ -28,6 +28,7 @@
 {% set on_email_operations = request.endpoint == 'email_operations_page' %}
 {% set on_email_qa_dashboard = request.endpoint == 'email_qa_dashboard_page' %}
 {% set on_email_readiness = request.endpoint in ['email_readiness_page', 'email_readiness_update'] %}
+{% set on_whatsapp_queue = request.endpoint in ['whatsapp_queue_list', 'whatsapp_queue_detail', 'queue_whatsapp_from_draft', 'approve_whatsapp_queue_item', 'send_whatsapp_queue_item', 'cancel_whatsapp_queue_item'] %}
 {% set on_usage = request.endpoint == 'usage_page' %}
 {% set on_audit = request.endpoint == 'audit_logs' %}
 
@@ -66,6 +67,7 @@
       <p class="sidebar-title">Communications</p>
       <a href="{{ url_for('document_communications_register') }}" class="sidebar-link {{ 'active' if on_document_communications else '' }}"><i class="bi bi-envelope-open-text"></i>Communication Drafts</a>
       <a href="{{ url_for('email_queue_list') }}" class="sidebar-link {{ 'active' if on_email_queue else '' }}"><i class="bi bi-envelope"></i>Email Queue</a>
+      <a href="{{ url_for('whatsapp_queue_list') }}" class="sidebar-link {{ 'active' if on_whatsapp_queue else '' }}"><i class="bi bi-whatsapp"></i>WhatsApp Queue</a>
       <a href="{{ url_for('email_delivery_logs_page') }}" class="sidebar-link {{ 'active' if on_email_delivery_logs else '' }}"><i class="bi bi-journal-text"></i>Email Delivery Logs</a>
       <a href="{{ url_for('email_provider_settings_page') }}" class="sidebar-link {{ 'active' if on_email_providers else '' }}"><i class="bi bi-sliders"></i>Email Providers</a>
       <a href="{{ url_for('email_operations_page') }}" class="sidebar-link {{ 'active' if on_email_operations else '' }}"><i class="bi bi-activity"></i>Email Operations</a>

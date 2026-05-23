@@ -931,6 +931,52 @@ def init_db():
                 ON gstr3b_review_packs(tenant_id, linked_task_id);
         """)
 
+        # ── Wave 14: WhatsApp Send Queue ──────────────────────────────────
+        # 31. whatsapp_send_queue — queued WhatsApp messages for manual approval
+        # status: queued, approved_to_send, sent, failed, cancelled
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS whatsapp_send_queue (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id           INTEGER NOT NULL,
+                client_entity_id    INTEGER NOT NULL,
+                task_id             INTEGER,
+                draft_id            INTEGER NOT NULL,
+                to_phone            TEXT NOT NULL,
+                body                TEXT NOT NULL,
+                media_url           TEXT,
+                status              TEXT NOT NULL DEFAULT 'queued',
+                provider            TEXT,
+                provider_message_id TEXT,
+                queued_by           INTEGER,
+                queued_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+                sent_at             TEXT,
+                failed_at           TEXT,
+                error_message       TEXT,
+                metadata_json       TEXT,
+                created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        conn.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_send_queue_tenant_status_queued_at
+                ON whatsapp_send_queue(tenant_id, status, queued_at);
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_send_queue_tenant_client_queued_at
+                ON whatsapp_send_queue(tenant_id, client_entity_id, queued_at);
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_send_queue_tenant_draft_id
+                ON whatsapp_send_queue(tenant_id, draft_id);
+        """)
+
+        # Backward-compatible column add for existing installations
+        wa_queue_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(whatsapp_send_queue)").fetchall()
+        }
+        if "media_url" not in wa_queue_columns:
+            conn.execute("ALTER TABLE whatsapp_send_queue ADD COLUMN media_url TEXT")
+        if "provider_message_id" not in wa_queue_columns:
+            conn.execute("ALTER TABLE whatsapp_send_queue ADD COLUMN provider_message_id TEXT")
+
 
 # ---------------------------------------------------------------------------
 # Helper functions

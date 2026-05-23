@@ -42,6 +42,9 @@ import security
 import usage
 import voice_assistant
 import smtp_sender
+import whatsapp_queue
+import whatsapp_sender
+import portal_browser
 from orchestrator import get_orchestrator
 
 app = Flask(__name__)
@@ -2738,6 +2741,176 @@ def _value_error(error):
 def _db_error(error):
 	flash(f"Database error: {error}", "danger")
 	return redirect(request.referrer or url_for("dashboard")), 500
+
+
+# ============================================================
+# Wave 14: WhatsApp Queue Routes
+# ============================================================
+
+@app.get("/whatsapp-queue/")
+@login_required
+def whatsapp_queue_list():
+	tenant_id = security.get_current_tenant_id()
+	filters = {
+		"status": request.args.get("status", ""),
+		"client_entity_id": request.args.get("client_entity_id", ""),
+	}
+	items = whatsapp_queue.list_whatsapp_queue(tenant_id, {k: v for k, v in filters.items() if v})
+	summary = whatsapp_queue.get_whatsapp_queue_summary(tenant_id)
+	provider_configured = whatsapp_sender.is_whatsapp_configured()
+	return render_template(
+		"whatsapp_queue.html",
+		items=items,
+		summary=summary,
+		filters=filters,
+		provider_configured=provider_configured,
+	)
+
+
+@app.get("/whatsapp-queue/<int:queue_id>")
+@login_required
+def whatsapp_queue_detail(queue_id):
+	tenant_id = security.get_current_tenant_id()
+	item = whatsapp_queue.get_whatsapp_queue_item(tenant_id, queue_id)
+	if not item:
+		flash("WhatsApp queue item not found.", "danger")
+		return redirect(url_for("whatsapp_queue_list"))
+	provider_configured = whatsapp_sender.is_whatsapp_configured()
+	return render_template(
+		"whatsapp_queue_detail.html",
+		item=item,
+		provider_configured=provider_configured,
+	)
+
+
+@app.post("/whatsapp-queue/from-draft/<int:draft_id>")
+@login_required
+def queue_whatsapp_from_draft(draft_id):
+	tenant_id = security.get_current_tenant_id()
+	user_id = security.get_current_user_id()
+	to_phone = (request.form.get("to_phone") or "").strip()
+	media_url = (request.form.get("media_url") or "").strip() or None
+	try:
+		queue_id = whatsapp_queue.queue_whatsapp_from_draft(
+			tenant_id, draft_id, to_phone, user_id, media_url
+		)
+		flash("WhatsApp message queued successfully.", "success")
+		return redirect(url_for("whatsapp_queue_detail", queue_id=queue_id))
+	except Exception as exc:
+		flash(exc, "danger")
+		return redirect(request.referrer or url_for("document_communications_register"))
+
+
+@app.post("/whatsapp-queue/<int:queue_id>/approve")
+@login_required
+def approve_whatsapp_queue_item(queue_id):
+	tenant_id = security.get_current_tenant_id()
+	user_id = security.get_current_user_id()
+	try:
+		whatsapp_queue.approve_whatsapp_queue_item(tenant_id, queue_id, user_id)
+		flash("WhatsApp message approved for sending.", "success")
+	except Exception as exc:
+		flash(exc, "danger")
+	return redirect(url_for("whatsapp_queue_detail", queue_id=queue_id))
+
+
+@app.post("/whatsapp-queue/<int:queue_id>/send")
+@login_required
+def send_whatsapp_queue_item(queue_id):
+	tenant_id = security.get_current_tenant_id()
+	user_id = security.get_current_user_id()
+	try:
+		whatsapp_queue.send_approved_whatsapp_queue_item(tenant_id, queue_id, user_id)
+		flash("WhatsApp message sent successfully.", "success")
+	except Exception as exc:
+		flash(exc, "danger")
+	return redirect(url_for("whatsapp_queue_detail", queue_id=queue_id))
+
+
+@app.post("/whatsapp-queue/<int:queue_id>/cancel")
+@login_required
+def cancel_whatsapp_queue_item(queue_id):
+	tenant_id = security.get_current_tenant_id()
+	reason = (request.form.get("reason") or "").strip() or None
+	try:
+		whatsapp_queue.cancel_whatsapp_queue_item(tenant_id, queue_id, reason)
+		flash("WhatsApp queue item cancelled.", "success")
+	except Exception as exc:
+		flash(exc, "danger")
+	return redirect(url_for("whatsapp_queue_detail", queue_id=queue_id))
+
+
+# ============================================================
+# Wave 14: Portal Browser (Chromium/Playwright) Routes
+# ============================================================
+
+@app.post("/credentials/<int:credential_id>/verify-live")
+@login_required
+def credential_verify_live(credential_id):
+	"""
+	Trigger headless Chromium login verification for a stored credential.
+	Returns JSON so the UI can show a live result without a page reload.
+	Requires Playwright to be installed; returns an informative error if not.
+	"""
+	tenant_id = security.get_current_tenant_id()
+	try:
+		result = portal_browser.run_portal_verification(tenant_id, credential_id)
+		return jsonify(result)
+	except RuntimeError as exc:
+		return jsonify({"status": "not_configured", "message": str(exc)}), 200
+	except ValueError as exc:
+		return jsonify({"status": "failed", "message": str(exc)}), 404
+	except Exception as exc:
+		return jsonify({"status": "failed", "message": f"Verification error: {exc}"}), 500
+
+
+@app.post("/portal-browser/fetch/<int:credential_id>")
+@login_required
+def portal_browser_fetch(credential_id):
+	"""
+	Fetch compliance data from a portal using stored credentials and Chromium.
+	Accepts optional JSON body with fetch_type, gstin, pan.
+	Returns JSON with fetched data.
+	"""
+	tenant_id = security.get_current_tenant_id()
+	payload = request.get_json(silent=True) or {}
+	try:
+		# Load credential from DB
+		import credential_vault as cv
+		with db.get_db() as conn:
+			cred_row = conn.execute(
+				"""
+				SELECT cc.*, ce.gstin, ce.pan
+				FROM client_credentials cc
+				LEFT JOIN client_entities ce
+					   ON cc.client_entity_id = ce.id AND ce.tenant_id = cc.tenant_id
+				WHERE cc.tenant_id = ? AND cc.id = ?
+				""",
+				(tenant_id, credential_id),
+			).fetchone()
+
+		if not cred_row:
+			return jsonify({"error": "Credential not found."}), 404
+
+		cred = dict(cred_row)
+		portal_type = cred["portal_type"]
+		portal_url = cv.PORTAL_URLS.get(portal_type, "")
+		username = cred.get("username") or ""
+		password = cv.decrypt_secret(cred.get("secret_value_encrypted")) or ""
+
+		result = portal_browser.fetch_portal_data(
+			portal_type=portal_type,
+			username=username,
+			password=password,
+			portal_url=portal_url,
+			gstin=payload.get("gstin") or cred.get("gstin"),
+			pan=payload.get("pan") or cred.get("pan"),
+		)
+		return jsonify(result)
+	except RuntimeError as exc:
+		return jsonify({"error": str(exc)}), 200
+	except Exception as exc:
+		return jsonify({"error": f"Fetch error: {exc}"}), 500
 
 
 if __name__ == "__main__":
