@@ -53,7 +53,7 @@ def _build_portal_state(portal_type: str, credential: dict | None) -> dict:
         "status": resolved_status,
         "credential_id": credential.get("id"),
         "username_available": bool(credential.get("username")),
-        "secret_available": credential_vault._secret_is_available(credential.get("secret_value_encrypted")),
+        "secret_available": credential_vault.is_secret_available(credential.get("secret_value_encrypted")),
         "otp_required": bool(credential.get("otp_required")),
         "portal_url": credential_vault.get_portal_url(portal_type),
     }
