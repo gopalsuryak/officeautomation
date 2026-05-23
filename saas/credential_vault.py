@@ -108,6 +108,11 @@ def _secret_is_available(value: str | None) -> bool:
     return bool(cleaned) and cleaned != ENCRYPTION_PLACEHOLDER
 
 
+def is_secret_available(value: str | None) -> bool:
+    """Public wrapper for secret availability check."""
+    return _secret_is_available(value)
+
+
 def _clean_text(value: Any) -> str | None:
     if value is None:
         return None

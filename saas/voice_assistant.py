@@ -46,7 +46,6 @@ def _task_type_from_phrase(task_phrase: str) -> str | None:
 
 
 def parse_voice_command(tenant_id, command_text):
-    del tenant_id
     clean = _normalise_command_text(command_text)
     if not clean:
         return _unknown_result()

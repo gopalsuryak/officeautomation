@@ -73,11 +73,33 @@ def require_roles(required_roles):
     return decorator
 
 
+TRUSTED_PROXY_IPS = set(
+    ip.strip()
+    for ip in os.environ.get("TRUSTED_PROXY_IPS", "127.0.0.1,::1").split(",")
+    if ip.strip()
+)
+
+
 def get_request_ip():
-    forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.remote_addr
+    """
+    Get the client IP address from the request.
+    Only trusts X-Forwarded-For from trusted proxy IPs.
+    """
+    remote_addr = request.remote_addr or ""
+    if remote_addr in TRUSTED_PROXY_IPS:
+        forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+    return remote_addr
+
+
+def _get_csp_nonce() -> str:
+    """Generate a CSP nonce for this request. Call per-request."""
+    import secrets
+    nonce = secrets.token_hex(16)
+    if "csp_nonce" not in get_current_user_id.__code__.co_freevars:
+        pass  # Simple nonce generation
+    return nonce
 
 
 def security_headers(response):
@@ -85,6 +107,16 @@ def security_headers(response):
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    # Content-Security-Policy for XSS protection
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
     return response
 
 
@@ -111,3 +143,28 @@ def check_required_env_vars() -> list[str]:
         if not os.environ.get(var):
             missing.append(var)
     return missing
+
+
+def validate_production_credentials() -> tuple[list[str], list[str]]:
+    """
+    Validate that API credentials are properly configured in production.
+    Returns (missing_secrets, weak_secrets) - empty lists if all credentials are valid.
+    """
+    missing = []
+    weak = []
+
+    # Check PAPERCLIP_ADMIN_KEY - critical for tenant provisioning
+    paperclip_key = os.environ.get("PAPERCLIP_ADMIN_API_KEY", "")
+    if not paperclip_key:
+        missing.append("PAPERCLIP_ADMIN_API_KEY")
+    elif len(paperclip_key) < 32:
+        weak.append("PAPERCLIP_ADMIN_API_KEY (too short)")
+
+    # Check RAZORPAY_KEY_SECRET - critical for payment verification
+    razorpay_secret = os.environ.get("RAZORPAY_KEY_SECRET", "")
+    if not razorpay_secret:
+        missing.append("RAZORPAY_KEY_SECRET")
+    elif len(razorpay_secret) < 20:
+        weak.append("RAZORPAY_KEY_SECRET (too short)")
+
+    return missing, weak

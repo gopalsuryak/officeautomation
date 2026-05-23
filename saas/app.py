@@ -48,19 +48,18 @@ app = Flask(__name__)
 
 
 def flash(message, category="message"):
-	if isinstance(message, Exception):
-		message = "Action failed. Please review the inputs and try again."
-	elif isinstance(message, str):
-		lowered = message.lower()
-		if category in {"warning", "danger", "error"} and (
-			"traceback" in lowered
-			or "exception" in lowered
-			or "failed" in lowered
-			or "error" in lowered
-			or ":" in message
-		):
-			message = "Action failed. Please review the inputs and try again."
-	return flask_flash(message, category)
+    if isinstance(message, Exception):
+        message = "Action failed. Please review the inputs and try again."
+    elif isinstance(message, str):
+        lowered = message.lower()
+        # Only sanitize actual Python exception text, not legitimate user messages
+        if category in {"warning", "danger", "error"} and (
+            "traceback" in lowered
+            or "exception" in lowered
+            or (": " in message and ("traceback" in lowered or "exception" in lowered))
+        ):
+            message = "Action failed. Please review the inputs and try again."
+    return flask_flash(message, category)
 
 
 def _is_production() -> bool:

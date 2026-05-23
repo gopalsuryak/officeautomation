@@ -60,7 +60,7 @@ Stores connector configuration per tenant/provider.
 | `id`, `tenant_id` | Identity + tenant scope |
 | `provider` | `manual_upload`, `zoho_books`, `tally_bridge` |
 | `status` | connected, disconnected, error |
-| `auth_payload_json` | encrypted token/credential metadata |
+| `metadata_json` | encrypted token/credential metadata (was `auth_payload_json` in older docs) |
 | `last_sync_at` | latest successful sync timestamp |
 | `created_at`, `updated_at` | audit timestamps |
 

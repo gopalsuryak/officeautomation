@@ -134,6 +134,8 @@ def _resolve_pending_from(new_status: str, existing_pending_from: str | None) ->
         "ai_failed": "system",
         "ai_queued": "system",
         "ai_processing": "system",
+        "ai_draft_ready": "system",
+        "ready_for_ai": "staff",
         "draft": "staff",
         "changes_required": "staff",
     }

@@ -846,6 +846,18 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_client_credentials_tenant_portal_status
                 ON client_credentials(tenant_id, portal_type, status);
 
+            CREATE INDEX IF NOT EXISTS idx_task_comments_tenant_task_created
+                ON task_comments(tenant_id, task_id, created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_gst_reconciliation_runs_tenant_client_status
+                ON gst_reconciliation_runs(tenant_id, client_entity_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_gst_reconciliation_results_tenant_run
+                ON gst_reconciliation_results(tenant_id, reconciliation_run_id);
+
+            CREATE INDEX IF NOT EXISTS idx_gstr3b_review_packs_tenant_task
+                ON gstr3b_review_packs(tenant_id, linked_task_id);
+
             CREATE INDEX IF NOT EXISTS idx_accounting_connections_tenant_client
                 ON accounting_connections(tenant_id, client_entity_id);
 

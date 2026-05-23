@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import db
 import plans
 
 
 def current_period_month():
-    return datetime.now().strftime("%Y-%m")
+    return datetime.now(timezone.utc).strftime("%Y-%m")
 
 
 def _get_tenant_plan(conn, tenant_id):
