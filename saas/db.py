@@ -200,6 +200,7 @@ def init_db():
                 output_markdown         TEXT,
                 raw_json                TEXT,
                 paperclip_comment_id    TEXT,
+                paperclip_run_id        TEXT,
                 created_at              TEXT DEFAULT CURRENT_TIMESTAMP
             );
         """)
@@ -644,6 +645,14 @@ def init_db():
         if "provider_setting_id" not in email_queue_columns:
             conn.execute("ALTER TABLE email_send_queue ADD COLUMN provider_setting_id INTEGER")
 
+        # Backward-compatible column add for ai_outputs (added in production readiness phase)
+        ai_output_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(ai_outputs)").fetchall()
+        }
+        if "paperclip_run_id" not in ai_output_columns:
+            conn.execute("ALTER TABLE ai_outputs ADD COLUMN paperclip_run_id TEXT")
+
         # Indexes for email_send_queue
         conn.executescript("""
             CREATE INDEX IF NOT EXISTS idx_email_send_queue_tenant_status_queued_at
@@ -815,6 +824,9 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_ai_outputs_tenant_task
                 ON ai_outputs(tenant_id, task_id);
+
+            CREATE INDEX IF NOT EXISTS idx_ai_outputs_tenant_run
+                ON ai_outputs(tenant_id, paperclip_run_id);
 
             CREATE INDEX IF NOT EXISTS idx_document_requests_tenant_task_status
                 ON document_requests(tenant_id, task_id, status);

@@ -1,4 +1,5 @@
 from functools import wraps
+import os
 
 from flask import flash, redirect, request, session, url_for
 
@@ -85,3 +86,28 @@ def security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     return response
+
+
+def enforce_production_security(app_config: dict) -> None:
+    """
+    Apply production-grade security settings to Flask app config.
+    Call this once during startup when APP_ENV=production.
+    """
+    app_config.setdefault("SESSION_COOKIE_SECURE", True)
+    app_config.setdefault("SESSION_COOKIE_HTTPONLY", True)
+    app_config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+    app_config.setdefault("REMEMBER_COOKIE_SECURE", True)
+    app_config.setdefault("REMEMBER_COOKIE_HTTPONLY", True)
+
+
+def check_required_env_vars() -> list[str]:
+    """
+    Validate that required environment variables are set in production.
+    Returns list of missing variable names (empty if all present).
+    """
+    required = ["SECRET_KEY"]
+    missing = []
+    for var in required:
+        if not os.environ.get(var):
+            missing.append(var)
+    return missing

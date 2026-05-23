@@ -100,6 +100,42 @@ def _apply_security_headers(response):
 	return security.security_headers(response)
 
 
+@app.get("/health")
+def health_check():
+	"""
+	Basic health check endpoint for load balancers and monitoring.
+	Returns 200 if the app is running, along with basic status info.
+	"""
+	checks = {"database": "ok", "app": "ok"}
+	status_code = 200
+	
+	try:
+		with db.get_db() as conn:
+			conn.execute("SELECT 1")
+	except Exception:
+		checks["database"] = "error"
+		status_code = 503
+	
+	return jsonify({
+		"status": "healthy" if status_code == 200 else "degraded",
+		"checks": checks,
+	}), status_code
+
+
+@app.get("/ready")
+def readiness_check():
+	"""
+	Readiness probe for Kubernetes/orchestration systems.
+	Checks if the app is ready to serve traffic.
+	"""
+	try:
+		with db.get_db() as conn:
+			conn.execute("SELECT 1")
+		return jsonify({"ready": True}), 200
+	except Exception:
+		return jsonify({"ready": False}), 503
+
+
 @app.context_processor
 def _inject_base_context():
 	current_tenant = security.get_current_tenant()
@@ -815,6 +851,7 @@ def task_send_to_ai(task_id):
 		return redirect(url_for("tasks_list"))
 
 	try:
+		usage.check_hourly_ai_rate_limit(tenant_id)
 		usage.increment_ai_task_usage(tenant_id, amount=1)
 		payload = _task_ai_payload(_to_dict(task), tenant_id)
 		issue_id = get_orchestrator().create_agent_task(tenant_id, task_id, task["task_type"], payload)

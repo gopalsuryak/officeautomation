@@ -183,6 +183,27 @@ def map_ai_status_to_task_status(status_recommendation):
     return mapping.get((status_recommendation or "").strip().lower(), "under_review")
 
 
+def _check_idempotent_sync(conn, tenant_id, task_id, paperclip_run_id=None):
+    """
+    Check if an AI result has already been synced for this task/run.
+    Returns the existing ai_output_id if already synced, None otherwise.
+    """
+    query = """
+        SELECT id FROM ai_outputs
+        WHERE tenant_id = ? AND task_id = ?
+    """
+    params = [tenant_id, task_id]
+    
+    if paperclip_run_id:
+        query += " AND paperclip_run_id = ?"
+        params.append(paperclip_run_id)
+    
+    query += " ORDER BY id DESC LIMIT 1"
+    
+    existing = conn.execute(query, params).fetchone()
+    return existing["id"] if existing else None
+
+
 def insert_ai_output(
     conn,
     tenant_id,
@@ -192,7 +213,21 @@ def insert_ai_output(
     model=None,
     prompt_version="wave5_structured",
     paperclip_comment_id=None,
+    paperclip_run_id=None,
+    idempotent_check=True,
 ):
+    """
+    Insert AI output into the database.
+    
+    If idempotent_check is True (default), will check if an output for this
+    task+run already exists and skip insertion if so. Returns the existing
+    output_id if skipped, or the new output_id if inserted.
+    """
+    if idempotent_check and paperclip_run_id:
+        existing_id = _check_idempotent_sync(conn, tenant_id, task_id, paperclip_run_id)
+        if existing_id:
+            return existing_id
+    
     raw_json = json.dumps(normalized, ensure_ascii=False)
     cur = conn.execute(
         """
@@ -201,8 +236,8 @@ def insert_ai_output(
             output_type, status_recommendation, confidence,
             missing_inputs_json, risk_flags_json, applicable_laws_json, document_requests_json,
             client_message_draft, internal_working_note, output_markdown,
-            raw_json, paperclip_comment_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            raw_json, paperclip_comment_id, paperclip_run_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             tenant_id,
@@ -222,6 +257,7 @@ def insert_ai_output(
             normalized["final_output_markdown"],
             raw_json,
             str(paperclip_comment_id) if paperclip_comment_id is not None else None,
+            paperclip_run_id,
         ),
     )
     return cur.lastrowid
@@ -297,6 +333,8 @@ def sync_paperclip_result_for_task(tenant_id, task_id, user_id=None, ip_address=
     if not paperclip_issue_id:
         raise ValueError("This task has not been sent to AI yet.")
 
+    paperclip_run_id = task.get("paperclip_run_id")
+    
     try:
         comments = get_orchestrator().get_agent_comments(paperclip_issue_id)
     except Exception as exc:
@@ -315,6 +353,17 @@ def sync_paperclip_result_for_task(tenant_id, task_id, user_id=None, ip_address=
     new_pending_from = pending_from_map.get(new_status, task["pending_from"] or "staff")
 
     with db.get_db() as conn:
+        # Idempotent check - skip if already synced for this run
+        existing_output_id = _check_idempotent_sync(conn, tenant_id, task_id, paperclip_run_id)
+        if existing_output_id:
+            return {
+                "ai_output_id": existing_output_id,
+                "new_status": old_status,
+                "document_requests_created": 0,
+                "idempotent_skipped": True,
+                "message": "AI result already synced for this run.",
+            }
+        
         ai_output_id = insert_ai_output(
             conn=conn,
             tenant_id=tenant_id,
@@ -324,6 +373,8 @@ def sync_paperclip_result_for_task(tenant_id, task_id, user_id=None, ip_address=
             model=_to_text(structured.get("model") if isinstance(structured, dict) else "") or None,
             prompt_version="wave5_structured",
             paperclip_comment_id=None,
+            paperclip_run_id=paperclip_run_id,
+            idempotent_check=False,  # Already checked above
         )
 
         document_requests_created = create_document_requests_from_ai(
