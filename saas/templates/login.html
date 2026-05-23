@@ -30,14 +30,16 @@
       </form>
 
       {% if demo_logins %}
-      <div class="alert alert-info mt-4 mb-0" role="alert">
-        <div class="fw-semibold mb-2">Demo Logins</div>
-        <div class="small text-muted mb-2">Use these test credentials in development.</div>
-        <ul class="small mb-0 ps-3">
+      <div class="alert alert-warning mt-4 mb-0" role="alert">
+        <div class="fw-semibold mb-2"><i class="bi bi-bug me-1"></i>Dev Quick Login</div>
+        <div class="d-flex flex-wrap gap-2 mt-1">
           {% for demo in demo_logins %}
-          <li><strong>{{ demo.label }}</strong>: {{ demo.email }} / {{ demo.password }}</li>
+          <button type="button" class="btn btn-sm btn-outline-secondary"
+            onclick="document.querySelector('[name=email]').value='{{ demo.email }}';
+                     document.querySelector('[name=password]').value='{{ demo.password }}';"
+          >{{ demo.label }}</button>
           {% endfor %}
-        </ul>
+        </div>
       </div>
       {% endif %}
 

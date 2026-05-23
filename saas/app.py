@@ -412,10 +412,16 @@ def signup():
 	return redirect(url_for("dashboard"))
 
 
+_DEV_LOGINS = [] if _is_production() else [
+	{"label": "Owner", "email": "owner@demo.local", "password": "demo1234"},
+	{"label": "Manager", "email": "manager@demo.local", "password": "demo1234"},
+]
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
 	if request.method == "GET":
-		return render_template("login.html", demo_logins=[])
+		return render_template("login.html", demo_logins=_DEV_LOGINS)
 
 	email = (request.form.get("email") or "").strip().lower()
 	password = request.form.get("password") or ""
@@ -424,7 +430,7 @@ def login():
 
 	if not user or not check_password_hash(user["password_hash"], password):
 		flash("Invalid email or password.", "danger")
-		return render_template("login.html", demo_logins=[])
+		return render_template("login.html", demo_logins=_DEV_LOGINS)
 
 	session["user_id"] = user["id"]
 	session.permanent = True
