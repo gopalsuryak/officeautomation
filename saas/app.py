@@ -91,6 +91,18 @@ _configure_secret_key()
 _configure_session_cookies()
 db.init_db()
 
+# Validate configuration and credentials in production
+if _is_production():
+    import provisioner
+    import security
+    provisioner.init_provisioner()
+    missing = security.check_required_env_vars()
+    if missing:
+        raise RuntimeError(f"Missing required environment variables in production: {', '.join(missing)}")
+    missing_creds, weak_creds = security.validate_production_credentials()
+    if missing_creds:
+        raise RuntimeError(f"Missing required credentials in production: {', '.join(missing_creds)}")
+
 _CSRF_SESSION_KEY = "_csrf_token"
 
 

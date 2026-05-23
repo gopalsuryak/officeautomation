@@ -93,13 +93,10 @@ def get_request_ip():
     return remote_addr
 
 
-def _get_csp_nonce() -> str:
-    """Generate a CSP nonce for this request. Call per-request."""
+def _generate_csp_nonce() -> str:
+    """Generate a CSP nonce for this request."""
     import secrets
-    nonce = secrets.token_hex(16)
-    if "csp_nonce" not in get_current_user_id.__code__.co_freevars:
-        pass  # Simple nonce generation
-    return nonce
+    return secrets.token_hex(16)
 
 
 def security_headers(response):
@@ -108,9 +105,10 @@ def security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     # Content-Security-Policy for XSS protection
+    # Note: 'unsafe-inline' allowed for legacy JS; prefer nonce-based approach for production hardening
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: https:; "
         "font-src 'self'; "

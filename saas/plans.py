@@ -21,7 +21,7 @@ PLAN_LIMITS = {
     },
     "agency": {
         "display_name": "Agency",
-        "monthly_price": 1999,
+        "monthly_price": 19999,
         "max_clients": 9999,
         "max_ai_tasks_per_month": 5000,
         "max_document_requests_per_month": 10000,

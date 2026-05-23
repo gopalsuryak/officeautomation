@@ -283,14 +283,14 @@ def check_daily_connector_rate_limit(tenant_id):
             return  # No rate limit configured
         
         # Check usage today from audit_logs
-        today_start = datetime.now().strftime("%Y-%m-%d")
+        today_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         
         recent_count = conn.execute(
             """
             SELECT COUNT(*) AS c
             FROM audit_logs
             WHERE tenant_id = ?
-              AND action LIKE 'connector_%'
+              AND action LIKE 'connector_run_%'
               AND created_at >= ?
             """,
             (tenant_id, today_start),

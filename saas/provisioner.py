@@ -77,3 +77,11 @@ def list_tasks(company_id: str) -> list:
 def get_task_comments(issue_id: str) -> list:
     result = _api("GET", f"/api/issues/{issue_id}/comments")
     return result if isinstance(result, list) else result.get("comments", [])
+
+
+def init_provisioner() -> None:
+    """
+    Validate provisioner configuration at startup.
+    Call this once when the application starts in production.
+    """
+    _validate_config()
