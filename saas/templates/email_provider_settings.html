@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Email Provider Settings - CA Assist{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <h1 class="mb-2">Email Provider Settings</h1>
+  <p class="text-muted">Prepare SMTP, Gmail, or Zoho Mail settings for future reviewed email sending.</p>
+
+  <div class="alert alert-info mb-4">
+    <strong>Safety:</strong> Provider settings are stored for future use only. CA Assist does not send emails in this phase.
+  </div>
+
+  <div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Total</div>
+          <div class="h3 mb-0">{{ summary.get('total', 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Active</div>
+          <div class="h3 mb-0 text-success">{{ summary.get('active', 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Draft</div>
+          <div class="h3 mb-0 text-secondary">{{ summary.get('draft', 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Error</div>
+          <div class="h3 mb-0 text-danger">{{ summary.get('error', 0) }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5 class="card-title">New Provider</h5>
+      <form method="post" action="{{ url_for('email_provider_settings_new') }}" class="row g-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="col-md-3">
+          <label class="form-label">Provider Type</label>
+          <select name="provider_type" class="form-select" required>
+            <option value="">Select Provider</option>
+            <option value="smtp">SMTP</option>
+            <option value="gmail">Gmail</option>
+            <option value="zoho">Zoho</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Display Name</label>
+          <input type="text" name="display_name" class="form-control" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">From Name</label>
+          <input type="text" name="from_name" class="form-control" placeholder="Optional">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">From Email</label>
+          <input type="email" name="from_email" class="form-control" required>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">SMTP Host</label>
+          <input type="text" name="smtp_host" class="form-control" placeholder="smtp.example.com">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">SMTP Port</label>
+          <input type="number" name="smtp_port" class="form-control" placeholder="587">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">SMTP Username</label>
+          <input type="text" name="smtp_username" class="form-control" placeholder="Optional">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Password / App Password</label>
+          <input type="password" name="smtp_password_secret" class="form-control" placeholder="Stored hidden">
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">OAuth Client ID</label>
+          <input type="text" name="oauth_client_id" class="form-control" placeholder="For Gmail/Zoho future OAuth">
+        </div>
+        <div class="col-md-6 d-flex align-items-end">
+          <button type="submit" class="btn btn-primary w-100">Create Provider</button>
+        </div>
+      </form>
+      <p class="text-muted small mt-3 mb-0">Secrets are hidden after saving and are not shown to AI.</p>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h5 class="card-title">Filters</h5>
+      <form method="get" action="{{ url_for('email_provider_settings_page') }}" class="row g-3 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label">Search</label>
+          <input type="text" name="search" class="form-control" value="{{ filters.get('search', '') }}" placeholder="Display name, email, host, username">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Provider Type</label>
+          <select name="provider_type" class="form-select">
+            <option value="">All</option>
+            {% for key in provider_types %}
+            <option value="{{ key }}" {% if filters.get('provider_type') == key %}selected{% endif %}>{{ provider_display_names.get(key, key|upper) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Status</label>
+          <select name="status" class="form-select">
+            <option value="">All</option>
+            {% for status in provider_statuses %}
+            <option value="{{ status }}" {% if filters.get('status') == status %}selected{% endif %}>{{ status|capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2 d-grid gap-2">
+          <button type="submit" class="btn btn-outline-primary">Apply</button>
+          <a href="{{ url_for('email_provider_settings_page') }}" class="btn btn-outline-secondary">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    {% if providers %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Display Name</th>
+            <th>Provider</th>
+            <th>From Email</th>
+            <th>Status</th>
+            <th>Default</th>
+            <th>Last Check</th>
+            <th>Check Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for provider in providers %}
+          <tr>
+            <td>{{ provider.get('display_name') or '—' }}</td>
+            <td>{{ provider_display_names.get(provider.get('provider_type'), provider.get('provider_type')|upper) }}</td>
+            <td>{{ provider.get('from_email') or '—' }}</td>
+            <td>
+              <span class="badge {% if provider.get('status') == 'active' %}bg-success{% elif provider.get('status') == 'error' %}bg-danger{% elif provider.get('status') == 'inactive' %}bg-secondary{% else %}bg-light text-dark border{% endif %}">
+                {{ provider.get('status', 'draft')|capitalize }}
+              </span>
+            </td>
+            <td>
+              {% if provider.get('is_default') %}
+              <span class="badge bg-primary">Default</span>
+              {% else %}
+              <span class="text-muted small">No</span>
+              {% endif %}
+            </td>
+            <td><small class="text-muted">{{ provider.get('last_checked_at') or '—' }}</small></td>
+            <td>{{ provider.get('last_check_status') or '—' }}</td>
+            <td>
+              <a href="{{ url_for('email_provider_setting_detail', provider_id=provider.get('id')) }}" class="btn btn-sm btn-outline-primary">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body py-5 text-center">
+      <h5 class="text-muted">No provider settings yet.</h5>
+      <p class="text-muted mb-0">Create SMTP, Gmail, or Zoho metadata for future reviewed email sending.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

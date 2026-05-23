@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Email Provider Detail - CA Assist{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="mb-0">Email Provider Detail</h1>
+    <a href="{{ url_for('email_provider_settings_page') }}" class="btn btn-outline-secondary btn-sm">Back to Email Providers</a>
+  </div>
+
+  <div class="alert alert-warning mb-3">
+    <strong>Safety:</strong> No email is sent from this page. Readiness check is local validation only.
+  </div>
+
+  <div class="row">
+    <div class="col-lg-8">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">Provider Profile</h5>
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Display Name</dt>
+            <dd class="col-sm-8">{{ provider.get('display_name') or '—' }}</dd>
+
+            <dt class="col-sm-4">Provider Type</dt>
+            <dd class="col-sm-8">{{ provider_display_names.get(provider.get('provider_type'), provider.get('provider_type')|upper) }}</dd>
+
+            <dt class="col-sm-4">From Name</dt>
+            <dd class="col-sm-8">{{ provider.get('from_name') or '—' }}</dd>
+
+            <dt class="col-sm-4">From Email</dt>
+            <dd class="col-sm-8">{{ provider.get('from_email') or '—' }}</dd>
+
+            <dt class="col-sm-4">Status</dt>
+            <dd class="col-sm-8">
+              <span class="badge {% if provider.get('status') == 'active' %}bg-success{% elif provider.get('status') == 'error' %}bg-danger{% elif provider.get('status') == 'inactive' %}bg-secondary{% else %}bg-light text-dark border{% endif %}">
+                {{ provider.get('status', 'draft')|capitalize }}
+              </span>
+            </dd>
+
+            <dt class="col-sm-4">Default</dt>
+            <dd class="col-sm-8">
+              {% if provider.get('is_default') %}
+              <span class="badge bg-primary">Default</span>
+              {% else %}
+              <span class="text-muted">No</span>
+              {% endif %}
+            </dd>
+
+            <dt class="col-sm-4">Last Check Status</dt>
+            <dd class="col-sm-8">{{ provider.get('last_check_status') or '—' }}</dd>
+
+            <dt class="col-sm-4">Last Error</dt>
+            <dd class="col-sm-8">{{ provider.get('last_error') or '—' }}</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">SMTP / OAuth Details</h5>
+          <dl class="row mb-0">
+            <dt class="col-sm-4">SMTP Host</dt>
+            <dd class="col-sm-8">{{ provider.get('smtp_host') or '—' }}</dd>
+
+            <dt class="col-sm-4">SMTP Port</dt>
+            <dd class="col-sm-8">{{ provider.get('smtp_port') or '—' }}</dd>
+
+            <dt class="col-sm-4">SMTP Username</dt>
+            <dd class="col-sm-8">{{ provider.get('smtp_username') or '—' }}</dd>
+
+            <dt class="col-sm-4">Password Secret</dt>
+            <dd class="col-sm-8">{{ provider.get('secret_masked') or 'Not stored' }}</dd>
+
+            <dt class="col-sm-4">OAuth Client ID</dt>
+            <dd class="col-sm-8">{{ provider.get('oauth_client_id') or '—' }}</dd>
+
+            <dt class="col-sm-4">OAuth Status</dt>
+            <dd class="col-sm-8">{{ provider.get('oauth_status') or 'not_configured' }}</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">Actions</h5>
+
+          <form method="post" action="{{ url_for('email_provider_setting_status_update', provider_id=provider.get('id')) }}" class="mb-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <label class="form-label">Update Status</label>
+            <select name="status" class="form-select mb-2" required>
+              {% for status in provider_statuses %}
+              <option value="{{ status }}" {% if provider.get('status') == status %}selected{% endif %}>{{ status|capitalize }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm w-100">Update Status</button>
+          </form>
+
+          <form method="post" action="{{ url_for('email_provider_setting_set_default', provider_id=provider.get('id')) }}" class="mb-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <button type="submit" class="btn btn-outline-primary btn-sm w-100">Set as Default</button>
+          </form>
+
+          <form method="post" action="{{ url_for('email_provider_setting_check', provider_id=provider.get('id')) }}" class="mb-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Local Readiness Check</button>
+          </form>
+
+          <a href="{{ url_for('email_provider_settings_page') }}" class="btn btn-outline-secondary btn-sm w-100">Back to Email Providers</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

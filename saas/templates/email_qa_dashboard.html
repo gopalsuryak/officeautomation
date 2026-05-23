@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}Email Module QA Dashboard - CA Assist{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+      <h1 class="mb-1">Email Module QA Dashboard</h1>
+      <p class="text-muted mb-0">Final readiness and safety review for manual SMTP sending.</p>
+    </div>
+  </div>
+
+  <div class="alert alert-info mb-4">
+    <strong>Safety note:</strong> This dashboard is read-only. No email is sent from this page.
+  </div>
+
+  <div class="row g-2 mb-4">
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Drafts Awaiting Review</div><div class="h4 mb-0">{{ summary.drafts_awaiting_review }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Reviewed Not Queued</div><div class="h4 mb-0">{{ summary.reviewed_not_queued }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Queued Without Provider</div><div class="h4 mb-0 text-warning">{{ summary.queued_without_provider }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Ready to Send</div><div class="h4 mb-0 text-info">{{ summary.ready_to_send_count }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Approved to Send</div><div class="h4 mb-0 text-primary">{{ summary.approved_to_send_count }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Failed</div><div class="h4 mb-0 text-danger">{{ summary.failed_count }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Failed Unreviewed</div><div class="h4 mb-0 text-danger">{{ summary.failed_unreviewed_count }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Sent This Month</div><div class="h4 mb-0 text-success">{{ summary.sent_this_month }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Active Providers</div><div class="h4 mb-0 text-success">{{ summary.active_providers }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Providers Needing Attention</div><div class="h4 mb-0 text-warning">{{ summary.providers_needing_attention }}</div></div></div>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Safety Checklist</strong></div>
+    {% if safety_checklist %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Check</th>
+            <th>Status</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for check in safety_checklist %}
+          <tr>
+            <td><code>{{ check.name }}</code></td>
+            <td>
+              {% if check.status == 'pass' %}
+              <span class="badge bg-success">Pass</span>
+              {% elif check.status == 'warning' %}
+              <span class="badge bg-warning text-dark">Warning</span>
+              {% else %}
+              <span class="badge bg-danger">Fail</span>
+              {% endif %}
+            </td>
+            <td>{{ check.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No checklist data available.</div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Providers Needing Attention</strong></div>
+    {% if providers_needing_attention %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Provider</th>
+            <th>Type</th>
+            <th>From Email</th>
+            <th>Status</th>
+            <th>Readiness</th>
+            <th>Issue</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in providers_needing_attention %}
+          <tr>
+            <td>{{ row.display_name or '—' }}</td>
+            <td>{{ row.provider_type or '—' }}</td>
+            <td>{{ row.from_email or '—' }}</td>
+            <td>{{ row.status or '—' }}</td>
+            <td>{{ row.last_check_status or '—' }}</td>
+            <td>
+              <div>{{ row.issue_summary or 'Needs review' }}</div>
+              {% if row.last_error %}
+              <small class="text-muted">{{ row.last_error }}</small>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('email_provider_setting_detail', provider_id=row.provider_id) }}" class="btn btn-sm btn-outline-secondary">View Provider</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No providers currently need attention.</div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Failed Items Needing Review</strong></div>
+    {% if failed_items_needing_review %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Failed At</th>
+            <th>Client</th>
+            <th>Task</th>
+            <th>Provider</th>
+            <th>To</th>
+            <th>Subject</th>
+            <th>Error</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in failed_items_needing_review %}
+          <tr>
+            <td><small class="text-muted">{{ row.failed_at or '—' }}</small></td>
+            <td>{{ row.client_name or '—' }}</td>
+            <td>{{ row.task_title or '—' }}</td>
+            <td>{{ row.provider_display_name or '—' }}</td>
+            <td>{{ row.to_email or '—' }}</td>
+            <td>{{ row.subject or '—' }}</td>
+            <td><small class="text-danger">{{ row.error_message or '—' }}</small></td>
+            <td><a href="{{ url_for('email_queue_detail', queue_id=row.queue_id) }}" class="btn btn-sm btn-outline-secondary">View Queue Item</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No failed queue items currently need review.</div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Approved Items Pending Manual Send</strong></div>
+    {% if approved_items_pending_send %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Approved At</th>
+            <th>Client</th>
+            <th>Task</th>
+            <th>Provider</th>
+            <th>To</th>
+            <th>Subject</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in approved_items_pending_send %}
+          <tr>
+            <td><small class="text-muted">{{ row.approved_at or row.queued_at or '—' }}</small></td>
+            <td>{{ row.client_name or '—' }}</td>
+            <td>{{ row.task_title or '—' }}</td>
+            <td>{{ row.provider_display_name or '—' }}</td>
+            <td>{{ row.to_email or '—' }}</td>
+            <td>{{ row.subject or '—' }}</td>
+            <td><a href="{{ url_for('email_queue_detail', queue_id=row.queue_id) }}" class="btn btn-sm btn-outline-secondary">View Queue Item</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No approved_to_send items pending manual action.</div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Failure Rate by Provider</strong></div>
+    {% if failure_rate_by_provider %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Provider</th>
+            <th>Type</th>
+            <th>Sent</th>
+            <th>Failed</th>
+            <th>Total Attempts</th>
+            <th>Failure Rate %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in failure_rate_by_provider %}
+          <tr>
+            <td>{{ row.display_name or '—' }}</td>
+            <td>{{ row.provider_type or '—' }}</td>
+            <td>{{ row.sent_count }}</td>
+            <td>{{ row.failed_count }}</td>
+            <td>{{ row.total_attempts }}</td>
+            <td>{{ '%.2f'|format(row.failure_rate_percent) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No sent/failed attempts available yet for provider failure-rate comparison.</div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-2">
+    <div class="card-body py-2">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="small text-muted">Quick links:</span>
+        <a href="{{ url_for('email_operations_page') }}" class="btn btn-sm btn-outline-primary">Email Operations</a>
+        <a href="{{ url_for('email_queue_list') }}" class="btn btn-sm btn-outline-primary">Email Queue</a>
+        <a href="{{ url_for('email_delivery_logs_page') }}" class="btn btn-sm btn-outline-primary">Email Delivery Logs</a>
+        <a href="{{ url_for('email_provider_settings_page') }}" class="btn btn-sm btn-outline-primary">Email Providers</a>
+        <a href="{{ url_for('document_communications_register') }}" class="btn btn-sm btn-outline-primary">Communication Drafts</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

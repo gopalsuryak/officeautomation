@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Accounting Connectors — CA Assist{% endblock %}
+{% block topbar_title %}Accounting Connectors{% endblock %}
+{% block topbar_subtitle %}Connect Tally, Zoho Books, or manual accounting exports for AI-assisted GST, TDS, audit, and ITR workflows.{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-start justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1"><i class="bi bi-plug-fill text-primary me-2"></i>Accounting Connectors</h3>
+    <p class="page-subtle mb-0">Connect Tally, Zoho Books, or manual accounting exports for AI-assisted GST, TDS, audit, and ITR workflows.</p>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Total</div>
+      <div class="fs-3 fw-bold">{{ summary.total_connections }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Tally</div>
+      <div class="fs-3 fw-bold">{{ summary.tally_connections }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Zoho Books</div>
+      <div class="fs-3 fw-bold">{{ summary.zoho_books_connections }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Manual Upload</div>
+      <div class="fs-3 fw-bold">{{ summary.manual_upload_connections }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Connected</div>
+      <div class="fs-3 fw-bold text-success">{{ summary.connected_count }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Error</div>
+      <div class="fs-3 fw-bold text-danger">{{ summary.error_count }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">New Connection</div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('accounting_connectors_new') }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div class="col-md-4">
+        <label class="form-label">Client</label>
+        <select class="form-select" name="client_entity_id" required>
+          <option value="">Select client</option>
+          {% for client in clients %}
+          <option value="{{ client.id }}">{{ client.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Provider</label>
+        <select class="form-select" name="provider" required>
+          <option value="">Select provider</option>
+          {% for provider_key, provider_label in providers.items() %}
+          <option value="{{ provider_key }}">{{ provider_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Connection Name</label>
+        <input type="text" class="form-control" name="connection_name" placeholder="Example: Main Tally Connection" required>
+      </div>
+      <div class="col-md-1 d-grid">
+        <label class="form-label">&nbsp;</label>
+        <button type="submit" class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <form method="GET" action="{{ url_for('accounting_connectors_page') }}" class="row g-2 align-items-end">
+      <div class="col-12 col-md-3">
+        <label class="form-label small text-muted mb-1">Search</label>
+        <input type="text" class="form-control form-control-sm" name="search" value="{{ selected.search }}" placeholder="client, provider, connection">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small text-muted mb-1">Provider</label>
+        <select class="form-select form-select-sm" name="provider">
+          <option value="">All</option>
+          {% for provider_key, provider_label in providers.items() %}
+          <option value="{{ provider_key }}" {% if selected.provider == provider_key %}selected{% endif %}>{{ provider_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small text-muted mb-1">Status</label>
+        <select class="form-select form-select-sm" name="status">
+          <option value="">All</option>
+          {% for status in statuses %}
+          <option value="{{ status }}" {% if selected.status == status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small text-muted mb-1">Client</label>
+        <select class="form-select form-select-sm" name="client_entity_id">
+          <option value="">All</option>
+          {% for client in clients %}
+          <option value="{{ client.id }}" {% if selected.client_entity_id == (client.id|string) %}selected{% endif %}>{{ client.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-2 d-flex gap-1">
+        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        <a href="{{ url_for('accounting_connectors_page') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold">Connections</span>
+    <span class="badge bg-secondary">{{ connections|length }}</span>
+  </div>
+  {% if connections %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle small">
+      <thead class="table-light">
+        <tr>
+          <th>Client</th>
+          <th>Provider</th>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Auth Type</th>
+          <th>Last Sync</th>
+          <th>Last Error</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in connections %}
+        <tr>
+          <td>{{ item.client_name }}</td>
+          <td>{{ providers.get(item.provider, item.provider) }}</td>
+          <td class="fw-semibold">{{ item.connection_name }}</td>
+          <td><span class="status-badge">{{ item.status }}</span></td>
+          <td>{{ item.auth_type or '-' }}</td>
+          <td>{{ item.last_sync_at or '-' }}</td>
+          <td>{{ item.last_error or '-' }}</td>
+          <td>
+            <a href="{{ url_for('accounting_connection_detail', connection_id=item.id) }}" class="btn btn-outline-primary btn-sm">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-muted">No accounting connectors yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

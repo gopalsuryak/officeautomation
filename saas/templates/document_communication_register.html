@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% set on_document_communications = true %}
+
+{% block title %}Document Communication Drafts{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+	<div class="d-flex justify-content-between align-items-center mb-4">
+		<div>
+			<h1>Document Communication Drafts</h1>
+			<p class="text-muted">Review internal email and WhatsApp-style drafts for pending document requests.</p>
+		</div>
+	</div>
+
+	<!-- Safety Note -->
+	<div class="alert alert-info mb-4">
+		<i class="bi bi-info-circle"></i>
+		<strong>Important:</strong> Drafts are internal only. CA Assist does not send email or WhatsApp in this phase.
+	</div>
+
+	<!-- KPI Cards -->
+	<div class="row mb-4">
+		<div class="col-md-3 mb-3">
+			<div class="card bg-light border-0">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Total Drafts</h6>
+					<h2 class="fw-bold">{{ summary.get('total_drafts', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-3 mb-3">
+			<div class="card bg-light border-0">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Email Drafts</h6>
+					<h2 class="fw-bold text-info">{{ summary.get('email_count', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-3 mb-3">
+			<div class="card bg-light border-0">
+				<div class="card-body text-center">
+					<h6 class="text-muted">WhatsApp Drafts</h6>
+					<h2 class="fw-bold text-success">{{ summary.get('whatsapp_count', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-3 mb-3">
+			<div class="card bg-light border-0">
+				<div class="card-body text-center">
+					<h6 class="text-muted">This Month</h6>
+					<h2 class="fw-bold text-primary">{{ summary.get('drafts_this_month', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Additional KPI Cards -->
+	<div class="row mb-4">
+		<div class="col-md-4 mb-3">
+			<div class="card bg-light border-0">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Draft Status</h6>
+					<h3 class="fw-bold text-secondary">{{ summary.get('draft_count', 0) or 0 }}</h3>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-4 mb-3">
+			<div class="card bg-light border-0">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Reviewed</h6>
+					<h3 class="fw-bold text-success">{{ summary.get('reviewed_count', 0) or 0 }}</h3>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-4 mb-3">
+			<div class="card bg-light border-0">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Archived</h6>
+					<h3 class="fw-bold text-dark">{{ summary.get('archived_count', 0) or 0 }}</h3>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Filters -->
+	<div class="card mb-4">
+		<div class="card-body">
+			<h5 class="mb-3">Filters</h5>
+			<form method="GET" action="{{ url_for('document_communications_register') }}" class="row g-3 align-items-end">
+				<div class="col-md-2">
+					<label class="form-label">Search</label>
+					<input type="text" class="form-control" name="search" value="{{ filters.get('search', '') or '' }}" placeholder="Client, task, subject..." />
+				</div>
+				<div class="col-md-2">
+					<label class="form-label">Client</label>
+					<select name="client_entity_id" class="form-select">
+						<option value="">All Clients</option>
+						{% for client in clients %}
+							<option value="{{ client.id }}" {% if filters.get('client_entity_id') and filters.get('client_entity_id')|int == client.id %}selected{% endif %}>{{ client.name }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="col-md-2">
+					<label class="form-label">Task</label>
+					<select name="task_id" class="form-select">
+						<option value="">All Tasks</option>
+						{% for task in tasks %}
+							<option value="{{ task.id }}" {% if filters.get('task_id') and filters.get('task_id')|int == task.id %}selected{% endif %}>{{ task.title }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="col-md-2">
+					<label class="form-label">Type</label>
+					<select name="draft_type" class="form-select">
+						<option value="">All Types</option>
+						<option value="email" {% if filters.get('draft_type') == 'email' %}selected{% endif %}>Email</option>
+						<option value="whatsapp" {% if filters.get('draft_type') == 'whatsapp' %}selected{% endif %}>WhatsApp</option>
+					</select>
+				</div>
+				<div class="col-md-2">
+					<label class="form-label">Status</label>
+					<select name="status" class="form-select">
+						<option value="">All Statuses</option>
+						<option value="draft" {% if filters.get('status') == 'draft' %}selected{% endif %}>Draft</option>
+						<option value="reviewed" {% if filters.get('status') == 'reviewed' %}selected{% endif %}>Reviewed</option>
+						<option value="archived" {% if filters.get('status') == 'archived' %}selected{% endif %}>Archived</option>
+					</select>
+				</div>
+				<div class="col-md-2">
+					<button type="submit" class="btn btn-primary w-100">Filter</button>
+					<a href="{{ url_for('document_communications_register') }}" class="btn btn-outline-secondary w-100 mt-2">Reset</a>
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<!-- Drafts Table -->
+	{% if drafts %}
+		<div class="card">
+			<div class="table-responsive">
+				<table class="table table-hover mb-0">
+					<thead class="table-light">
+						<tr>
+							<th>Created</th>
+							<th>Client</th>
+							<th>Task</th>
+							<th>Type</th>
+							<th>Status</th>
+							<th>Subject / Preview</th>
+							<th>Reviewed</th>
+							<th>Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{% for draft in drafts %}
+							<tr>
+								<td>
+									<small class="text-muted">{{ draft.created_at[:10] if draft.created_at else 'N/A' }}</small>
+								</td>
+								<td>{{ draft.client_name }}</td>
+								<td>{{ draft.task_title }}</td>
+								<td>
+									{% if draft.draft_type == 'email' %}
+										<span class="badge bg-info">Email</span>
+									{% elif draft.draft_type == 'whatsapp' %}
+										<span class="badge bg-success">WhatsApp</span>
+									{% else %}
+										<span class="badge bg-secondary">{{ draft.draft_type }}</span>
+									{% endif %}
+								</td>
+								<td>
+									{% if draft.status == 'draft' %}
+										<span class="badge bg-secondary">Draft</span>
+									{% elif draft.status == 'reviewed' %}
+										<span class="badge bg-success">Reviewed</span>
+									{% elif draft.status == 'archived' %}
+										<span class="badge bg-dark">Archived</span>
+									{% else %}
+										<span class="badge bg-secondary">{{ draft.status }}</span>
+									{% endif %}
+								</td>
+								<td>
+									<div>
+										<strong>{{ draft.subject[:50] if draft.subject else '(No subject)' }}</strong>
+										{% if draft.body_preview %}
+											<br />
+											<small class="text-muted">{{ draft.body_preview[:60] }}...</small>
+										{% endif %}
+									</div>
+								</td>
+								<td>
+									{% if draft.reviewed_at %}
+										<small class="text-muted">{{ draft.reviewed_at[:10] }}</small>
+									{% else %}
+										<small class="text-muted">—</small>
+									{% endif %}
+								</td>
+								<td>
+									<a href="{{ url_for('document_communication_draft_detail', draft_id=draft.draft_id) }}" class="btn btn-sm btn-outline-primary">View</a>
+									<a href="{{ url_for('document_communication_draft_download', draft_id=draft.draft_id) }}" class="btn btn-sm btn-outline-secondary" title="Download .txt">
+										<i class="bi bi-download"></i>
+									</a>
+									<a href="{{ url_for('document_communication_draft_print', draft_id=draft.draft_id) }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Print view">
+										<i class="bi bi-printer"></i>
+									</a>
+									<a href="{{ url_for('task_detail', task_id=draft.task_id) }}" class="btn btn-sm btn-outline-secondary">Task</a>
+								</td>
+							</tr>
+						{% endfor %}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	{% else %}
+		<div class="alert alert-light border py-5 text-center">
+			<h5 class="text-muted">No communication drafts yet.</h5>
+			<p class="text-muted mb-0">Generate a draft from a task with pending document requests.</p>
+		</div>
+	{% endif %}
+</div>
+{% endblock %}

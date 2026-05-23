@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Upload Preview — CA Assist{% endblock %}
+{% block topbar_title %}Accounting Upload Preview{% endblock %}
+{% block topbar_subtitle %}CSV/XLS/XLSX column and row preview validation (no import in this phase){% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-start justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1"><i class="bi bi-table text-primary me-2"></i>Upload Preview</h3>
+    <p class="page-subtle mb-0">{{ uploaded_file.original_filename }}</p>
+  </div>
+  <a href="{{ url_for('accounting_connection_detail', connection_id=connection.id) }}" class="btn btn-outline-secondary btn-sm">Back to Connector</a>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">File Summary</div>
+  <div class="card-body">
+    <div class="row g-2 small">
+      <div class="col-md-4"><span class="text-muted">Original filename:</span> {{ uploaded_file.original_filename }}</div>
+      <div class="col-md-4"><span class="text-muted">Upload type:</span> {{ uploaded_file.upload_type or '-' }}</div>
+      <div class="col-md-4"><span class="text-muted">Extension:</span> {{ uploaded_file.file_ext or '-' }}</div>
+      <div class="col-md-4"><span class="text-muted">Size:</span> {{ uploaded_file.file_size_bytes or 0 }}</div>
+      <div class="col-md-4"><span class="text-muted">File status:</span> {{ uploaded_file.status }}</div>
+      <div class="col-md-4"><span class="text-muted">Provider:</span> {{ provider_name }}</div>
+      <div class="col-md-4"><span class="text-muted">Row count:</span> {{ preview.row_count if preview else 0 }}</div>
+      <div class="col-md-4"><span class="text-muted">Validation status:</span> {{ preview.validation_status if preview else 'pending' }}</div>
+      <div class="col-md-4"><span class="text-muted">Uploaded at:</span> {{ uploaded_file.created_at or '-' }}</div>
+    </div>
+  </div>
+</div>
+
+{% if preview %}
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Detected Columns</div>
+  <div class="card-body">
+    {% if preview.detected_columns %}
+      {% for col in preview.detected_columns %}
+      <span class="badge bg-light text-dark border me-1 mb-1">{{ col }}</span>
+      {% endfor %}
+    {% else %}
+      <span class="text-muted">No columns detected.</span>
+    {% endif %}
+  </div>
+</div>
+
+{% if preview.validation_errors %}
+<div class="alert alert-warning" role="alert">
+  <strong>Validation issues:</strong>
+  <ul class="mb-0">
+    {% for err in preview.validation_errors %}
+    <li>{{ err }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Preview Rows (First 20)</div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle small">
+      <thead class="table-light">
+        <tr>
+          {% if preview.detected_columns %}
+            {% for col in preview.detected_columns %}
+            <th>{{ col }}</th>
+            {% endfor %}
+          {% else %}
+            <th>Preview</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% if preview.preview_rows %}
+          {% for row in preview.preview_rows %}
+          <tr>
+            {% for col in preview.detected_columns %}
+            <td>{{ row.get(col) }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td class="text-muted">No preview rows available.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Actions</div>
+  <div class="card-body d-flex gap-2 flex-wrap">
+    <form method="POST" action="{{ url_for('accounting_upload_preview_status_update', preview_id=preview.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <input type="hidden" name="status" value="valid">
+      <button type="submit" class="btn btn-success btn-sm">Mark Valid</button>
+    </form>
+    <form method="POST" action="{{ url_for('accounting_upload_preview_status_update', preview_id=preview.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <input type="hidden" name="status" value="rejected">
+      <button type="submit" class="btn btn-outline-danger btn-sm">Reject</button>
+    </form>
+
+    {% set importable_preview_types = ['trial_balance', 'ledger_dump', 'sales_register', 'purchase_register'] %}
+    {% set can_import_preview = preview.upload_type in importable_preview_types and preview.validation_status == 'valid' %}
+    {% if can_import_preview %}
+    <form method="POST" action="{{ url_for('accounting_upload_preview_import', preview_id=preview.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-primary btn-sm">Import Preview Data</button>
+    </form>
+    <div class="w-100"></div>
+    {% if preview.upload_type == 'sales_register' %}
+    <div class="alert alert-warning py-2 mb-0 small" role="alert">
+      This imports only preview rows as sales invoices in this phase. GST reconciliation will be added later.
+    </div>
+    {% elif preview.upload_type == 'purchase_register' %}
+    <div class="alert alert-warning py-2 mb-0 small" role="alert">
+      This imports only preview rows as purchase invoices in this phase. ITC/GSTR-2B reconciliation will be added later.
+    </div>
+    {% else %}
+    <div class="alert alert-warning py-2 mb-0 small" role="alert">
+      This imports only preview rows in this phase. Full-file import will be added later.
+    </div>
+    {% endif %}
+    {% elif preview.upload_type == 'gstr2b' %}
+    <div class="w-100"></div>
+    <div class="alert alert-warning py-2 mb-0 small" role="alert">
+      GSTR-2B preview is ready. Purchase register reconciliation will be added later.
+    </div>
+    {% elif preview.upload_type in importable_preview_types %}
+    <div class="w-100"></div>
+    {% if preview.upload_type == 'purchase_register' %}
+    <div class="alert alert-info py-2 mb-0 small" role="alert">
+      Mark this preview as valid to enable purchase register import.
+    </div>
+    {% else %}
+    <div class="alert alert-info py-2 mb-0 small" role="alert">
+      Mark this preview as valid to enable import.
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="w-100"></div>
+    <div class="alert alert-info py-2 mb-0 small" role="alert">
+      Import for this upload type will be added later.
+    </div>
+    {% endif %}
+
+    <a href="{{ url_for('accounting_connection_detail', connection_id=connection.id) }}" class="btn btn-outline-secondary btn-sm">Back to Connector</a>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info" role="alert">
+  No preview has been generated yet. Go back and click Parse Preview.
+</div>
+{% endif %}
+{% endblock %}

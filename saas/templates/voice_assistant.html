@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Jarvis Assistant - CA Assist{% endblock %}
+{% block topbar_title %}Jarvis Assistant{% endblock %}
+{% block topbar_subtitle %}Speak or type commands to navigate CA Assist and prepare safe actions for confirmation.{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-start justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1"><i class="bi bi-mic-fill text-primary me-2"></i>Jarvis Assistant</h3>
+    <p class="page-subtle mb-0">Speak or type commands to navigate CA Assist and prepare safe actions for confirmation.</p>
+  </div>
+</div>
+
+<div class="alert alert-warning rounded-3" role="alert">
+  <i class="bi bi-shield-lock me-1"></i>
+  Voice commands require confirmation before actions are performed. Credentials are never read aloud or sent to AI.
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header fw-semibold">Command Input</div>
+      <div class="card-body">
+        <div class="d-flex gap-2 mb-3 flex-wrap">
+          <button id="micBtn" class="btn btn-outline-primary" type="button">
+            <i class="bi bi-mic"></i> Start Mic
+          </button>
+          <button id="parseBtn" class="btn btn-primary" type="button">Parse Command</button>
+        </div>
+        <div id="voiceSupportMessage" class="small text-muted mb-2"></div>
+        <label for="commandInput" class="form-label">Command (voice transcript or manual text)</label>
+        <textarea id="commandInput" class="form-control" rows="4" placeholder="Type or dictate your command..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header fw-semibold">Transcript</div>
+      <div class="card-body">
+        <pre id="transcriptArea" class="bg-light border rounded p-3 small mb-0" style="min-height: 158px; white-space: pre-wrap;">No speech captured yet.</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card" id="previewCard">
+      <div class="card-header fw-semibold">Intent Preview</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-3">
+            <div class="small text-muted">Intent</div>
+            <div id="previewIntent" class="fw-semibold">-</div>
+          </div>
+          <div class="col-md-3">
+            <div class="small text-muted">Confidence</div>
+            <div id="previewConfidence" class="fw-semibold">-</div>
+          </div>
+          <div class="col-md-6">
+            <div class="small text-muted">Message</div>
+            <div id="previewMessage" class="fw-semibold">Parse a command to view preview.</div>
+          </div>
+        </div>
+        <hr>
+        <div class="small text-muted mb-1">Parameters</div>
+        <pre id="previewParameters" class="bg-light border rounded p-3 small" style="white-space: pre-wrap;">{}</pre>
+
+        <div class="small text-muted mb-1">Client Match / Candidates</div>
+        <pre id="previewClientInfo" class="bg-light border rounded p-3 small mb-0" style="white-space: pre-wrap;">None</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header fw-semibold">Confirmation</div>
+      <div class="card-body d-flex gap-2 flex-wrap align-items-center">
+        <button id="confirmBtn" class="btn btn-success" type="button" disabled>Confirm &amp; Execute</button>
+        <button id="cancelBtn" class="btn btn-outline-secondary" type="button">Cancel</button>
+        <span id="executionMessage" class="small text-muted"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header fw-semibold">Example Commands</div>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li>"Create GSTR-3B task for ABC Pvt Ltd for May 2026"</li>
+          <li>"Show overdue tasks"</li>
+          <li>"Open AI Automation"</li>
+          <li>"Open Portal Readiness"</li>
+          <li>"Open Accounting Data"</li>
+          <li>"Open client ABC Pvt Ltd"</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/voice_assistant.js') }}"></script>
+{% endblock %}

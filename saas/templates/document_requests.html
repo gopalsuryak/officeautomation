@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Document Requests{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+	<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+		<div>
+			<h1 class="mb-1">Document Requests</h1>
+			<p class="text-muted mb-0">Track documents requested from clients across compliance tasks.</p>
+		</div>
+	</div>
+
+	<div class="alert alert-info mb-4">
+		<i class="bi bi-info-circle me-2"></i>
+		<strong>Internal tracking only:</strong> Document requests are internal tracking records. Client communication is handled separately through reviewed drafts.
+	</div>
+
+	{% if summary %}
+	<div class="row mb-4">
+		<div class="col-md-2 col-sm-6 mb-3">
+			<div class="card bg-light border-0 h-100">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Total Requests</h6>
+					<h2 class="fw-bold mb-0">{{ summary.get('total_requests', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-2 col-sm-6 mb-3">
+			<div class="card bg-light border-0 h-100">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Requested</h6>
+					<h2 class="fw-bold text-secondary mb-0">{{ summary.get('requested', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-2 col-sm-6 mb-3">
+			<div class="card bg-light border-0 h-100">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Received</h6>
+					<h2 class="fw-bold text-primary mb-0">{{ summary.get('received', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-2 col-sm-6 mb-3">
+			<div class="card bg-light border-0 h-100">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Accepted</h6>
+					<h2 class="fw-bold text-success mb-0">{{ summary.get('accepted', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-2 col-sm-6 mb-3">
+			<div class="card bg-light border-0 h-100">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Rejected</h6>
+					<h2 class="fw-bold text-danger mb-0">{{ summary.get('rejected', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-2 col-sm-6 mb-3">
+			<div class="card bg-light border-0 h-100">
+				<div class="card-body text-center">
+					<h6 class="text-muted">Overdue</h6>
+					<h2 class="fw-bold text-warning mb-0">{{ summary.get('overdue', 0) or 0 }}</h2>
+				</div>
+			</div>
+		</div>
+	</div>
+	{% endif %}
+
+	<div class="card mb-4">
+		<div class="card-body">
+			<form method="GET" action="{{ url_for('document_requests_page') }}" class="row g-3 align-items-end">
+				<div class="col-md-4">
+					<label class="form-label">Search</label>
+					<input type="text" class="form-control" name="search" value="{{ filters.get('search', '') or '' }}" placeholder="Client, task, document, description..." />
+				</div>
+				{% if clients %}
+				<div class="col-md-3">
+					<label class="form-label">Client</label>
+					<select class="form-select" name="client_entity_id">
+						<option value="">All Clients</option>
+						{% for client in clients %}
+						{% set client_id = client.get('id') if client is mapping else client.id %}
+						{% set client_name = client.get('name') if client is mapping else client.name %}
+						<option value="{{ client_id }}" {% if filters.get('client_entity_id') == client_id|string %}selected{% endif %}>{{ client_name or 'Unnamed Client' }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				{% endif %}
+				<div class="col-md-3">
+					<label class="form-label">Status</label>
+					<select class="form-select" name="status">
+						<option value="">All Statuses</option>
+						{% for status in ['requested', 'received', 'accepted', 'rejected', 'cancelled'] %}
+						<option value="{{ status }}" {% if filters.get('status') == status %}selected{% endif %}>{{ status.replace('_', ' ')|title }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="col-md-2 d-grid gap-2">
+					<button type="submit" class="btn btn-primary">Apply Filters</button>
+					<a href="{{ url_for('document_requests_page') }}" class="btn btn-outline-secondary">Reset</a>
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<div class="card">
+		{% if document_requests %}
+		<div class="table-responsive">
+			<table class="table table-hover align-middle mb-0">
+				<thead class="table-light">
+					<tr>
+						<th>Created</th>
+						<th>Client</th>
+						<th>Task</th>
+						<th>Document</th>
+						<th>Status</th>
+						<th>Requested From</th>
+						<th>Description</th>
+						<th class="text-end">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for row in document_requests %}
+					{% set item = row if row is mapping else row.__dict__ %}
+					{% set request_id = item.get('request_id') or item.get('id') %}
+					{% set task_id = item.get('task_id') %}
+					{% set created_at = item.get('created_at') or '' %}
+					{% set client_name = item.get('client_name') or 'Unknown Client' %}
+					{% set task_title = item.get('task_title') or 'Unknown Task' %}
+					{% set document_name = item.get('document_name') or 'Unnamed document' %}
+					{% set status = (item.get('status') or 'unknown') %}
+					{% set requested_from = item.get('requested_from') or 'client' %}
+					{% set description = item.get('description') or item.get('notes') or '' %}
+					<tr class="{% if item.get('is_overdue') %}table-warning{% endif %}">
+						<td class="small text-muted">{{ created_at[:10] if created_at else 'N/A' }}</td>
+						<td>{{ client_name }}</td>
+						<td>
+							<div class="fw-semibold">{{ task_title }}</div>
+							{% if item.get('task_due_date') %}
+							<div class="small text-muted">Due {{ item.get('task_due_date') }}</div>
+							{% endif %}
+						</td>
+						<td>
+							<div class="fw-semibold">{{ document_name }}</div>
+							{% if request_id %}
+							<div class="small text-muted">#{{ request_id }}</div>
+							{% endif %}
+						</td>
+						<td>
+							<span class="badge {% if status == 'requested' %}bg-secondary{% elif status == 'received' %}bg-primary{% elif status == 'accepted' %}bg-success{% elif status == 'rejected' %}bg-danger{% elif status == 'cancelled' %}bg-dark{% else %}bg-light text-dark border{% endif %}">
+								{{ status.replace('_', ' ')|title }}
+							</span>
+							{% if item.get('is_overdue') %}
+							<div class="small text-warning mt-1">Overdue</div>
+							{% endif %}
+						</td>
+						<td>{{ requested_from.replace('_', ' ')|title }}</td>
+						<td>
+							{% if description %}
+								<span class="small text-muted">{{ description[:120] }}{% if description|length > 120 %}...{% endif %}</span>
+							{% else %}
+								<span class="small text-muted">—</span>
+							{% endif %}
+						</td>
+						<td class="text-end">
+							{% if task_id %}
+							<a href="{{ url_for('task_detail', task_id=task_id) }}" class="btn btn-sm btn-outline-primary">View Task</a>
+							{% else %}
+							<span class="small text-muted">—</span>
+							{% endif %}
+						</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
+		{% else %}
+		<div class="card-body py-5 text-center">
+			<h5 class="text-muted">No document requests found.</h5>
+			<p class="text-muted mb-0">Create document requests from a task detail page or GST working note.</p>
+		</div>
+		{% endif %}
+	</div>
+</div>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Audit Logs - CA Assist{% endblock %}
+{% block topbar_title %}Audit Logs{% endblock %}
+{% block topbar_subtitle %}Recent tenant activity and security trail{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1">Audit Logs</h3>
+    <p class="page-subtle mb-0">Recent tenant activity and security trail.</p>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header bg-white"><h6 class="fw-bold mb-0">Filters</h6></div>
+  <div class="card-body">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label small">Action</label>
+        <input type="text" name="action" class="form-control form-control-sm" value="{{ filters.action }}" placeholder="e.g. task_created" />
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small">Entity Type</label>
+        <input type="text" name="entity_type" class="form-control form-control-sm" value="{{ filters.entity_type }}" placeholder="e.g. compliance_task" />
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">User ID</label>
+        <input type="text" name="user_id" class="form-control form-control-sm" value="{{ filters.user_id }}" placeholder="e.g. 1" />
+      </div>
+      <div class="col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">Apply</button>
+        <a href="{{ url_for('audit_logs') }}" class="btn btn-outline-secondary btn-sm w-100">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header bg-white"><h6 class="fw-bold mb-0">Latest 100 Entries</h6></div>
+  <div class="card-body">
+    {% if logs %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Created At</th>
+              <th>User ID</th>
+              <th>Action</th>
+              <th>Entity Type</th>
+              <th>Entity ID</th>
+              <th>IP Address</th>
+              <th>Metadata</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in logs %}
+            <tr>
+              <td class="small">{{ row.created_at[:19] if row.created_at else '-' }}</td>
+              <td class="small">{{ row.user_id or '-' }}</td>
+              <td class="small fw-semibold">{{ row.action }}</td>
+              <td class="small">{{ row.entity_type or '-' }}</td>
+              <td class="small">{{ row.entity_id or '-' }}</td>
+              <td class="small">{{ row.ip_address or '-' }}</td>
+              <td class="small">
+                {% if row.metadata_json %}
+                  <details>
+                    <summary class="text-primary">View</summary>
+                    <pre class="mb-0 mt-1 p-2 bg-light rounded small" style="max-width:320px; white-space:pre-wrap;">{{ row.metadata_json }}</pre>
+                  </details>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="py-4">
+        <div class="empty-state">
+          <div class="small text-muted">No audit logs found for current filters.</div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

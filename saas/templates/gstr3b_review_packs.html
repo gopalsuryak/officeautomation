@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block title %}
+GSTR-3B Review Packs — CA Assist
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <!-- Header -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div>
+        <h1>GSTR-3B Review Packs</h1>
+        <p class="text-muted">Track draft, under-review, approved, and archived GST review packs across clients.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Safety Note -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="alert alert-info alert-dismissible fade show" role="alert">
+        <strong>ℹ️ Note:</strong>
+        <br>
+        Review packs are internal working papers. They do not constitute GST return filing or ITC approval.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <h5 class="mb-3">Summary</h5>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Total Packs</small>
+          <h4 class="card-title mb-0">{{ summary.total_packs }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Draft</small>
+          <h4 class="card-title mb-0">{{ summary.draft_count }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Under Review</small>
+          <h4 class="card-title mb-0">{{ summary.under_review_count }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Approved</small>
+          <h4 class="card-title mb-0">{{ summary.approved_count }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Archived</small>
+          <h4 class="card-title mb-0">{{ summary.archived_count }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">This Month</small>
+          <h4 class="card-title mb-0">{{ summary.packs_this_month }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">High Risk</small>
+          <h4 class="card-title mb-0">{{ summary.high_risk_count }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Pending Docs</small>
+          <h4 class="card-title mb-0">{{ summary.with_pending_documents_count }}</h4>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <form method="GET" action="{{ url_for('gstr3b_review_packs_list') }}" class="row g-2 align-items-end">
+            <div class="col-12 col-md-3">
+              <label for="search" class="form-label">Search</label>
+              <input type="text" id="search" name="search" class="form-control" placeholder="Client, period, task..." value="{{ filters.search }}">
+            </div>
+            <div class="col-12 col-md-3">
+              <label for="client_entity_id" class="form-label">Client</label>
+              <select id="client_entity_id" name="client_entity_id" class="form-select">
+                <option value="">All Clients</option>
+                {% for client in active_clients %}
+                <option value="{{ client.id }}" {% if filters.client_entity_id == client.id|string %}selected{% endif %}>
+                  {{ client.name }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-3">
+              <label for="status" class="form-label">Status</label>
+              <select id="status" name="status" class="form-select">
+                <option value="">All Statuses</option>
+                {% for st in pack_statuses %}
+                <option value="{{ st }}" {% if filters.status == st %}selected{% endif %}>
+                  {% if st == 'draft' %}
+                    Draft
+                  {% elif st == 'under_review' %}
+                    Under Review
+                  {% elif st == 'approved' %}
+                    Approved
+                  {% elif st == 'archived' %}
+                    Archived
+                  {% else %}
+                    {{ st|title }}
+                  {% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-2">
+              <label for="period" class="form-label">Period</label>
+              <input type="text" id="period" name="period" class="form-control" placeholder="e.g. Oct 2024" value="{{ filters.period }}">
+            </div>
+            <div class="col-12 col-md-1 d-grid gap-2">
+              <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            </div>
+            {% if active_filters %}
+            <div class="col-12">
+              <a href="{{ url_for('gstr3b_review_packs_list') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+            </div>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Review Packs Table -->
+  <div class="row">
+    <div class="col-12">
+      {% if packs %}
+      <div class="card">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 align-middle small">
+            <thead class="table-light">
+              <tr>
+                <th>Created</th>
+                <th>Client</th>
+                <th>Period</th>
+                <th>Status</th>
+                <th>Risk Flags</th>
+                <th>Pending Docs</th>
+                <th>Linked Task</th>
+                <th>Reconciliation</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for pack in packs %}
+              <tr>
+                <td>
+                  <small>
+                    <time datetime="{{ pack.created_at }}">
+                      {{ pack.created_at[:10] if pack.created_at else 'Unknown' }}
+                    </time>
+                  </small>
+                </td>
+                <td>
+                  <strong>{{ pack.client_name or 'Unknown' }}</strong>
+                </td>
+                <td>
+                  {{ pack.period or 'N/A' }}
+                </td>
+                <td>
+                  {% if pack.status == 'draft' %}
+                    <span class="badge bg-secondary">Draft</span>
+                  {% elif pack.status == 'under_review' %}
+                    <span class="badge bg-warning text-dark">Under Review</span>
+                  {% elif pack.status == 'approved' %}
+                    <span class="badge bg-success">Approved</span>
+                  {% elif pack.status == 'archived' %}
+                    <span class="badge bg-dark">Archived</span>
+                  {% else %}
+                    <span class="badge bg-secondary">{{ pack.status|title }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if pack.risk_flag_count > 0 %}
+                    <span class="badge bg-danger">{{ pack.risk_flag_count }} flags</span>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if pack.pending_document_count > 0 %}
+                    <span class="badge bg-info">{{ pack.pending_document_count }} docs</span>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if pack.linked_task_id %}
+                    <small>
+                      <a href="{{ url_for('task_detail', task_id=pack.linked_task_id) }}" class="link-primary">
+                        #{{ pack.linked_task_id }} • {{ pack.linked_task_title[:30] }}...
+                      </a>
+                      {% if pack.linked_task_status %}
+                      <br>
+                      <span class="text-muted">({{ pack.linked_task_status }})</span>
+                      {% endif %}
+                    </small>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if pack.reconciliation_run_id %}
+                    <a href="{{ url_for('gst_reconciliation_detail', run_id=pack.reconciliation_run_id) }}" class="link-secondary">
+                      Run #{{ pack.reconciliation_run_id }}
+                    </a>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      Actions
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                      <li>
+                        <a class="dropdown-item" href="{{ url_for('gstr3b_review_pack_detail', pack_id=pack.pack_id) }}">
+                          View Pack
+                        </a>
+                      </li>
+                      {% if pack.linked_task_id %}
+                      <li>
+                        <a class="dropdown-item" href="{{ url_for('task_detail', task_id=pack.linked_task_id) }}">
+                          View Task
+                        </a>
+                      </li>
+                      {% endif %}
+                      {% if pack.reconciliation_run_id %}
+                      <li>
+                        <a class="dropdown-item" href="{{ url_for('gst_reconciliation_detail', run_id=pack.reconciliation_run_id) }}">
+                          View Reconciliation
+                        </a>
+                      </li>
+                      {% endif %}
+                    </ul>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% else %}
+      <div class="card">
+        <div class="card-body text-center py-5">
+          <h5 class="text-muted">No review packs yet.</h5>
+          <p class="text-muted">Generate a pack from a GST reconciliation run to get started.</p>
+          <a href="{{ url_for('gst_reconciliation_page') }}" class="btn btn-primary">
+            Go to GST Reconciliation
+          </a>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

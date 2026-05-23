@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}AI Automation Registry — CA Assist{% endblock %}
+{% block topbar_title %}AI Automation Registry{% endblock %}
+{% block topbar_subtitle %}List of CA-office AI automations and their assigned agents{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-start justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1"><i class="bi bi-diagram-3-fill text-primary me-2"></i>AI Automation Registry</h3>
+    <p class="page-subtle mb-0">List of CA-office AI automations and their assigned agents.</p>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Total Automations</div>
+      <div class="fs-2 fw-bold">{{ summary.total_automations }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Active Automations</div>
+      <div class="fs-2 fw-bold text-success">{{ summary.active_automations }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">High Risk</div>
+      <div class="fs-2 fw-bold text-danger">{{ summary.high_risk_count }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Human Review Required</div>
+      <div class="fs-2 fw-bold text-warning">{{ summary.human_review_required_count }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <form method="GET" action="{{ url_for('automation_registry_page') }}" class="row g-2 align-items-end">
+      <div class="col-12 col-md-3">
+        <label class="form-label small text-muted mb-1">Search</label>
+        <input type="text" class="form-control form-control-sm" name="search" value="{{ selected.search }}" placeholder="name, key, description"/>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small text-muted mb-1">Category</label>
+        <select class="form-select form-select-sm" name="category">
+          <option value="">All</option>
+          {% for category in categories %}
+          <option value="{{ category }}" {% if selected.category == category %}selected{% endif %}>{{ category }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small text-muted mb-1">Assigned Agent</label>
+        <select class="form-select form-select-sm" name="agent">
+          <option value="">All</option>
+          {% for agent in agents %}
+          <option value="{{ agent }}" {% if selected.agent == agent %}selected{% endif %}>{{ agent }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small text-muted mb-1">Task Type</label>
+        <select class="form-select form-select-sm" name="task_type">
+          <option value="">All</option>
+          {% for task_type in task_types %}
+          <option value="{{ task_type }}" {% if selected.task_type == task_type %}selected{% endif %}>{{ task_type }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-1">
+        <div class="form-check mt-4">
+          <input class="form-check-input" type="checkbox" id="active_only" name="active_only" value="1" {% if selected.active_only %}checked{% endif %}>
+          <label class="form-check-label small" for="active_only">Active only</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-1 d-flex gap-1">
+        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        <a href="{{ url_for('automation_registry_page') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold">Automation Definitions</span>
+    <span class="badge bg-secondary">{{ automations|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle small">
+      <thead class="table-light">
+        <tr>
+          <th>Automation</th>
+          <th>Category</th>
+          <th>Assigned Agent</th>
+          <th>Task Types</th>
+          <th>Trigger</th>
+          <th>Risk Level</th>
+          <th>Human Review</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for automation in automations %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ automation.name }}</div>
+            <div class="text-muted" style="font-size:.78rem;">{{ automation.key }}</div>
+            <div class="text-muted" style="font-size:.78rem;">{{ automation.description }}</div>
+          </td>
+          <td><span class="status-badge">{{ automation.category }}</span></td>
+          <td>{{ automation.assigned_agent }}</td>
+          <td>
+            {% for task_type in automation.task_types %}
+            <span class="badge bg-light text-dark border mb-1">{{ task_type }}</span>
+            {% endfor %}
+          </td>
+          <td>{{ automation.trigger_type }}</td>
+          <td>
+            {% if automation.risk_level == 'high' %}
+            <span class="status-badge status-ai_failed">High</span>
+            {% elif automation.risk_level == 'medium' %}
+            <span class="status-badge status-changes_required">Medium</span>
+            {% else %}
+            <span class="status-badge status-approved">Low</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if automation.requires_human_review %}
+            <span class="status-badge status-under_review">Required</span>
+            {% else %}
+            <span class="status-badge status-closed">No</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if automation.is_active %}
+            <span class="status-badge status-approved">Active</span>
+            {% else %}
+            <span class="status-badge status-cancelled">Inactive</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header py-2 fw-semibold">Category Summary</div>
+      <div class="card-body">
+        {% for category, count in summary.category_counts.items() %}
+        <span class="badge bg-light text-dark border me-1 mb-2">{{ category }}: {{ count }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header py-2 fw-semibold">Agent Summary</div>
+      <div class="card-body">
+        {% for agent, count in summary.agent_counts.items() %}
+        <span class="badge bg-light text-dark border me-1 mb-2">{{ agent }}: {{ count }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block title %}GST Reconciliation Detail — CA Assist{% endblock %}
+{% block topbar_title %}GST Reconciliation Detail{% endblock %}
+{% block topbar_subtitle %}Purchase register vs GSTR-2B reconciliation result rows.{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1">Run #{{ run.id }}</h3>
+    <p class="page-subtle mb-0">{{ run.client_name }} • {{ run.created_at }}</p>
+  </div>
+  <a href="{{ url_for('gst_reconciliation_page') }}" class="btn btn-outline-secondary btn-sm">Back to GST Reconciliation</a>
+</div>
+
+<div class="row g-2 mb-4 small">
+  <div class="col-md-3"><div class="card p-3"><div class="text-muted">Books Invoices</div><div class="h5 mb-0">{{ run.total_books_invoices or 0 }}</div></div></div>
+  <div class="col-md-3"><div class="card p-3"><div class="text-muted">2B Invoices</div><div class="h5 mb-0">{{ run.total_2b_invoices or 0 }}</div></div></div>
+  <div class="col-md-3"><div class="card p-3"><div class="text-muted">Matched</div><div class="h5 mb-0">{{ run.matched_count or 0 }}</div></div></div>
+  <div class="col-md-3"><div class="card p-3"><div class="text-muted">Missing in 2B</div><div class="h5 mb-0">{{ run.missing_in_2b_count or 0 }}</div></div></div>
+  <div class="col-md-3"><div class="card p-3"><div class="text-muted">Missing in Books</div><div class="h5 mb-0">{{ run.missing_in_books_count or 0 }}</div></div></div>
+  <div class="col-md-3"><div class="card p-3"><div class="text-muted">Amount Mismatch</div><div class="h5 mb-0">{{ run.amount_mismatch_count or 0 }}</div></div></div>
+  <div class="col-md-3"><div class="card p-3"><div class="text-muted">Tax Mismatch</div><div class="h5 mb-0">{{ run.tax_mismatch_count or 0 }}</div></div></div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <span class="fw-semibold">GST Review Task</span>
+  </div>
+  <div class="card-body">
+    {% if linked_review_task %}
+    <div class="row g-2 mb-2 small">
+      <div class="col-md-4"><div class="card p-3"><div class="text-muted">Task Title</div><div class="fw-semibold">{{ linked_review_task.task_title }}</div></div></div>
+      <div class="col-md-3"><div class="card p-3"><div class="text-muted">Status</div><div class="fw-semibold">{{ task_status_labels.get(linked_review_task.task_status, linked_review_task.task_status) }}</div></div></div>
+      <div class="col-md-3"><div class="card p-3"><div class="text-muted">Pending From</div><div class="fw-semibold">{{ linked_review_task.pending_from or '-' }}</div></div></div>
+      <div class="col-md-2 d-grid">
+        <a href="{{ url_for('task_detail', task_id=linked_review_task.task_id) }}" class="btn btn-outline-primary btn-sm">View Task</a>
+      </div>
+    </div>
+    {% else %}
+    <p class="text-muted mb-3">This creates or links an internal review task only. No filing or ITC decision is performed.</p>
+    <form method="POST" action="{{ url_for('gst_reconciliation_create_review_task', run_id=run.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div class="col-md-8">
+        <label class="form-label">Link Existing GST Task (Optional)</label>
+        <select class="form-select" name="task_id">
+          <option value="">Auto-create/reuse task</option>
+          {% for task in available_review_tasks %}
+          <option value="{{ task.id }}">
+            #{{ task.id }} • {{ task.title }} • {{ task_type_labels.get(task.task_type, task.task_type) }} • {{ task_status_labels.get(task.status, task.status) }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 d-grid">
+        <button type="submit" class="btn btn-primary">Create/Link GST Review Task</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span class="fw-semibold">GST Working Note</span>
+    {% if latest_working_note %}
+    <span class="badge text-bg-warning">CA review required</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if not latest_working_note %}
+    <p class="text-muted mb-3">Generates a review-only GST reconciliation note. No ITC decision or filing is performed.</p>
+    <form method="POST" action="{{ url_for('gst_reconciliation_generate_working_note', run_id=run.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-primary btn-sm">Generate Working Note</button>
+    </form>
+    {% else %}
+    <div class="alert alert-warning py-2 mb-3">
+      This is a draft working note. CA review is mandatory before use.
+    </div>
+
+    <div class="row g-2 mb-3 small">
+      <div class="col-md-3"><div class="card p-3"><div class="text-muted">Status</div><div class="fw-semibold text-uppercase">{{ latest_working_note.status }}</div></div></div>
+      <div class="col-md-3"><div class="card p-3"><div class="text-muted">Confidence</div><div class="fw-semibold text-capitalize">{{ latest_working_note.confidence or 'medium' }}</div></div></div>
+      <div class="col-md-3"><div class="card p-3"><div class="text-muted">Created At</div><div class="fw-semibold">{{ latest_working_note.created_at }}</div></div></div>
+    </div>
+
+    <form method="POST" action="{{ url_for('gst_reconciliation_working_note_status_update', note_id=latest_working_note.id) }}" class="row g-2 align-items-end mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div class="col-md-4">
+        <label class="form-label">Update Status</label>
+        <select class="form-select" name="status" required>
+          {% for status in working_note_statuses %}
+          <option value="{{ status }}" {% if latest_working_note.status == status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 d-grid">
+        <button type="submit" class="btn btn-outline-primary">Save Status</button>
+      </div>
+    </form>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <h6 class="mb-2">Risk Flags</h6>
+        <ul class="mb-0">
+          {% for item in latest_working_note.risk_flags_list %}
+          <li>{{ item }}</li>
+          {% else %}
+          <li class="text-muted">No risk flags.</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="col-md-6">
+        <h6 class="mb-2">Suggested Document Requests</h6>
+        <ul class="mb-0">
+          {% for item in latest_working_note.document_requests_list %}
+          {% if item is string %}
+          <li>{{ item }}</li>
+          {% else %}
+          <li>{{ item.document_name or item.name or item.title or '-' }}</li>
+          {% endif %}
+          {% else %}
+          <li class="text-muted">No document requests.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    {% if latest_working_note.document_requests_list %}
+    <div class="card border mb-3">
+      <div class="card-body">
+        <h6 class="mb-2">Create Internal Document Requests</h6>
+        <p class="text-muted small mb-3">This only creates internal document request records. It does not email or WhatsApp the client.</p>
+        <form method="POST" action="{{ url_for('gst_reconciliation_working_note_create_document_requests', note_id=latest_working_note.id) }}" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <input type="hidden" name="run_id" value="{{ run.id }}">
+          <div class="col-md-8">
+            <label class="form-label">Link to Existing Task (Optional)</label>
+            <select class="form-select" name="task_id">
+              <option value="">Auto-create/find task</option>
+              {% for task in available_document_tasks %}
+              <option value="{{ task.id }}">
+                #{{ task.id }} • {{ task.title }} • {{ task_type_labels.get(task.task_type, task.task_type) }} • {{ task_status_labels.get(task.status, task.status) }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4 d-grid">
+            <button type="submit" class="btn btn-primary">Create Document Requests</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <h6 class="mb-2">Working Note Draft</h6>
+    <pre class="bg-light border rounded p-3 small" style="white-space:pre-wrap;">{{ latest_working_note.working_note_markdown or '-' }}</pre>
+
+    {% if working_notes|length > 1 %}
+    <h6 class="mb-2 mt-3">Earlier Notes</h6>
+    <div class="table-responsive">
+      <table class="table table-sm small mb-0">
+        <thead>
+          <tr>
+            <th>Note ID</th>
+            <th>Status</th>
+            <th>Confidence</th>
+            <th>Created At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for note in working_notes %}
+          <tr>
+            <td>{{ note.id }}</td>
+            <td>{{ note.status }}</td>
+            <td>{{ note.confidence or 'medium' }}</td>
+            <td>{{ note.created_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <span class="fw-semibold">GSTR-3B Review Pack</span>
+  </div>
+  <div class="card-body">
+    {% if latest_gstr3b_review_pack %}
+    <div class="alert alert-info py-2 mb-3">
+      This review pack aggregates sales, purchases, reconciliation exceptions, and pending documents.
+      It is review-only and does not constitute filing approval.
+    </div>
+    <div class="row g-2 mb-3 small">
+      <div class="col-md-3"><div class="card p-3"><div class="text-muted">Status</div><div class="fw-semibold text-uppercase">{{ latest_gstr3b_review_pack.status }}</div></div></div>
+      <div class="col-md-3"><div class="card p-3"><div class="text-muted">Period</div><div class="fw-semibold">{{ latest_gstr3b_review_pack.period or 'N/A' }}</div></div></div>
+      <div class="col-md-3"><div class="card p-3"><div class="text-muted">Created At</div><div class="fw-semibold">{{ latest_gstr3b_review_pack.created_at }}</div></div></div>
+      <div class="col-md-3 d-grid">
+        <a href="{{ url_for('gstr3b_review_pack_detail', pack_id=latest_gstr3b_review_pack.id) }}" class="btn btn-primary btn-sm">View Pack</a>
+      </div>
+    </div>
+    {% else %}
+    <p class="text-muted mb-3">Creates a review-only pack with sales, purchase, and reconciliation summaries. Does not file GSTR-3B or compute final ITC.</p>
+    <form method="POST" action="{{ url_for('gst_reconciliation_create_gstr3b_review_pack', run_id=run.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div class="col-md-8">
+        <label class="form-label">Period (Optional)</label>
+        <input type="text" class="form-control" name="period" placeholder="e.g. Oct 2024 or 10/2024">
+      </div>
+      <div class="col-md-4 d-grid">
+        <button type="submit" class="btn btn-primary">Generate GSTR-3B Review Pack</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="GET" action="{{ url_for('gst_reconciliation_detail', run_id=run.id) }}" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Match Status</label>
+        <select class="form-select" name="match_status">
+          <option value="">All</option>
+          {% for status in status_options %}
+          <option value="{{ status }}" {% if selected.match_status == status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Supplier GSTIN</label>
+        <input type="text" class="form-control" name="supplier_gstin" value="{{ selected.supplier_gstin }}" placeholder="e.g. 27ABCDE1234F1Z5">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Search</label>
+        <input type="text" class="form-control" name="search" value="{{ selected.search }}" placeholder="Supplier, invoice, remarks">
+      </div>
+      <div class="col-md-2 d-grid">
+        <button type="submit" class="btn btn-outline-primary">Apply</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle small">
+      <thead class="table-light">
+        <tr>
+          <th>Status</th>
+          <th>Supplier GSTIN</th>
+          <th>Supplier Name</th>
+          <th>Invoice No</th>
+          <th>Books Date</th>
+          <th>2B Date</th>
+          <th>Books Taxable</th>
+          <th>2B Taxable</th>
+          <th>Books Tax</th>
+          <th>2B Tax</th>
+          <th>Books Total</th>
+          <th>2B Total</th>
+          <th>Difference</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in results %}
+        {% set badge = {
+          'matched': 'success',
+          'missing_in_2b': 'danger',
+          'missing_in_books': 'warning',
+          'amount_mismatch': 'warning',
+          'tax_mismatch': 'warning',
+          'possible_duplicate': 'info',
+          'review_required': 'secondary'
+        }.get(row.match_status, 'secondary') %}
+        <tr>
+          <td><span class="badge text-bg-{{ badge }}">{{ row.match_status }}</span></td>
+          <td>{{ row.supplier_gstin or '-' }}</td>
+          <td>{{ row.supplier_name or '-' }}</td>
+          <td>{{ row.invoice_number or '-' }}</td>
+          <td>{{ row.invoice_date_books or '-' }}</td>
+          <td>{{ row.invoice_date_2b or '-' }}</td>
+          <td>{{ row.books_taxable_value or 0 }}</td>
+          <td>{{ row.gstr2b_taxable_value or 0 }}</td>
+          <td>{{ (row.books_igst or 0) + (row.books_cgst or 0) + (row.books_sgst or 0) }}</td>
+          <td>{{ (row.gstr2b_igst or 0) + (row.gstr2b_cgst or 0) + (row.gstr2b_sgst or 0) }}</td>
+          <td>{{ row.books_total or 0 }}</td>
+          <td>{{ row.gstr2b_total or 0 }}</td>
+          <td>{{ row.difference_total or 0 }}</td>
+          <td>{{ row.remarks or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="14" class="text-center text-muted py-4">No reconciliation rows found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

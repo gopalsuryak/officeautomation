@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Login — CA Assist{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <div class="card p-4 p-md-5">
+      <div class="text-center mb-4">
+        <i class="bi bi-person-circle text-primary fs-2"></i>
+        <h4 class="fw-bold mt-2">Welcome Back</h4>
+      </div>
+
+      <form method="POST" action="{{ url_for('login') }}" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Email Address</label>
+          <input type="email" name="email" class="form-control form-control-lg"
+                 placeholder="you@yourfirm.com" required autofocus/>
+        </div>
+        <div class="mb-4">
+          <label class="form-label fw-semibold">Password</label>
+          <input type="password" name="password" class="form-control form-control-lg"
+                 placeholder="Your password" required/>
+        </div>
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-box-arrow-in-right me-2"></i>Log In
+          </button>
+        </div>
+      </form>
+
+      {% if demo_logins %}
+      <div class="alert alert-info mt-4 mb-0" role="alert">
+        <div class="fw-semibold mb-2">Demo Logins</div>
+        <div class="small text-muted mb-2">Use these test credentials in development.</div>
+        <ul class="small mb-0 ps-3">
+          {% for demo in demo_logins %}
+          <li><strong>{{ demo.label }}</strong>: {{ demo.email }} / {{ demo.password }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <hr class="my-4"/>
+      <p class="text-center text-muted small mb-0">
+        New here? <a href="{{ url_for('signup') }}">Create an account</a>
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

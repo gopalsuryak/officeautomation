@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+
+{% block title %}
+GSTR-3B Review Pack — CA Assist
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <!-- Header -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <h1>GSTR-3B Review Pack</h1>
+          <p class="text-muted">Review-only pack for CA/staff review.</p>
+        </div>
+        <a href="{{ url_for('gst_reconciliation_detail', run_id=pack.reconciliation_run_id) }}" class="btn btn-secondary">
+          Back to Reconciliation
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Safety Alert -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <strong>⚠️ Important:</strong>
+        <br>
+        This review pack is not a GST return and does not constitute filing approval.
+        CA review and portal verification are required before GSTR-3B filing.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pack Info Cards -->
+  <div class="row mb-4">
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Client</small>
+          <h6 class="card-title mb-0">{{ pack.client_name or 'Unknown Client' }}</h6>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Period</small>
+          <h6 class="card-title mb-0">{{ pack.period or 'N/A' }}</h6>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Status</small>
+          <div class="mt-2">
+            {% if pack.status == 'draft' %}
+              <span class="badge bg-secondary">Draft</span>
+            {% elif pack.status == 'under_review' %}
+              <span class="badge bg-info">Under Review</span>
+            {% elif pack.status == 'approved' %}
+              <span class="badge bg-success">Approved (Review)</span>
+            {% elif pack.status == 'archived' %}
+              <span class="badge bg-dark">Archived</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ pack.status|title }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Created</small>
+          <h6 class="card-title mb-0">
+            <time datetime="{{ pack.created_at }}">
+              {{ pack.created_at[:10] if pack.created_at else 'Unknown' }}
+            </time>
+          </h6>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Cards Row -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <h5 class="mb-3">Summary</h5>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Sales Taxable</small>
+          <h6 class="card-title mb-0">₹ {{ "%.2f"|format(pack.sales_summary.get('taxable_value_total', 0)) }}</h6>
+          <small class="text-muted">{{ pack.sales_summary.get('invoice_count', 0) }} invoices</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Sales Tax</small>
+          <h6 class="card-title mb-0">₹ {{ "%.2f"|format(pack.sales_summary.get('total_tax', 0)) }}</h6>
+          <small class="text-muted">Total amount: ₹ {{ "%.2f"|format(pack.sales_summary.get('invoice_total', 0)) }}</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Purchase Taxable</small>
+          <h6 class="card-title mb-0">₹ {{ "%.2f"|format(pack.purchase_summary.get('taxable_value_total', 0)) }}</h6>
+          <small class="text-muted">{{ pack.purchase_summary.get('invoice_count', 0) }} invoices</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Purchase Tax</small>
+          <h6 class="card-title mb-0">₹ {{ "%.2f"|format(pack.purchase_summary.get('total_tax', 0)) }}</h6>
+          <small class="text-muted">Total amount: ₹ {{ "%.2f"|format(pack.purchase_summary.get('invoice_total', 0)) }}</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reconciliation Details -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <h5 class="mb-3">Reconciliation Details</h5>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Matched</small>
+          <h6 class="card-title mb-0">{{ pack.reconciliation_summary.get('matched_count', 0) }}</h6>
+          <small class="text-muted">of {{ pack.reconciliation_summary.get('total_books_invoices', 0) }} books invoices</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Exceptions</small>
+          <h6 class="card-title mb-0">
+            {{ pack.reconciliation_summary.get('missing_in_2b_count', 0) +
+               pack.reconciliation_summary.get('missing_in_books_count', 0) +
+               pack.reconciliation_summary.get('amount_mismatch_count', 0) +
+               pack.reconciliation_summary.get('tax_mismatch_count', 0) }}
+          </h6>
+          <small class="text-muted">Missing, amount/tax mismatches</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <small class="text-muted d-block mb-2">Pending Docs</small>
+          <h6 class="card-title mb-0">{{ pack.pending_documents|length }}</h6>
+          <small class="text-muted">Requested documents</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Risk Flags -->
+  {% if pack.risk_flags %}
+  <div class="row mb-4">
+    <div class="col-12">
+      <h5 class="mb-3">Risk Flags</h5>
+      <div class="d-flex flex-wrap gap-2">
+        {% for flag in pack.risk_flags %}
+        <span class="badge bg-warning text-dark">
+          ⚠️ {{ flag }}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Review Checklist -->
+  {% if pack.review_checklist %}
+  <div class="row mb-4">
+    <div class="col-12">
+      <h5 class="mb-3">Review Checklist</h5>
+      <div class="card">
+        <div class="card-body">
+          <ul class="list-unstyled mb-0">
+            {% for item in pack.review_checklist %}
+            <li class="mb-2">
+              <input type="checkbox" id="checklist-{{ loop.index }}" class="form-check-input" disabled>
+              <label for="checklist-{{ loop.index }}" class="form-check-label ms-2">
+                {{ item }}
+              </label>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Pending Documents -->
+  {% if pack.pending_documents %}
+  <div class="row mb-4">
+    <div class="col-12">
+      <h5 class="mb-3">Pending Documents</h5>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead class="table-light">
+            <tr>
+              <th>Document Name</th>
+              <th>Description</th>
+              <th>Status</th>
+              <th>Requested</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for doc in pack.pending_documents %}
+            <tr>
+              <td><strong>{{ doc.get('document_name', 'Unnamed') }}</strong></td>
+              <td>{{ doc.get('description', 'No description') }}</td>
+              <td>
+                {% if doc.get('status') == 'requested' %}
+                  <span class="badge bg-info">Requested</span>
+                {% elif doc.get('status') == 'received' %}
+                  <span class="badge bg-success">Received</span>
+                {% else %}
+                  <span class="badge bg-secondary">{{ doc.get('status', 'unknown')|title }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <time datetime="{{ doc.get('created_at') }}">
+                  {{ doc.get('created_at', '')[:10] }}
+                </time>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Pack Markdown -->
+  {% if pack.pack_markdown %}
+  <div class="row mb-4">
+    <div class="col-12">
+      <h5 class="mb-3">Review Pack Content</h5>
+      <div class="card">
+        <div class="card-body">
+          <pre class="mb-0" style="white-space: pre-wrap; word-wrap: break-word; font-size: 0.9rem; max-height: 600px; overflow-y: auto;">{{ pack.pack_markdown }}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Status Update Form -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <h5 class="mb-3">Update Status</h5>
+      <div class="card">
+        <div class="card-body">
+          <form method="post" action="{{ url_for('gstr3b_review_pack_status_update', pack_id=pack.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <div class="row align-items-end">
+              <div class="col-12 col-md-6 mb-3">
+                <label for="status" class="form-label">New Status</label>
+                <select id="status" name="status" class="form-select" required>
+                  <option value="">Select status...</option>
+                  {% for status_option in pack_statuses %}
+                  <option value="{{ status_option }}" {% if status_option == pack.status %}selected{% endif %}>
+                    {% if status_option == 'draft' %}
+                      Draft
+                    {% elif status_option == 'under_review' %}
+                      Under Review
+                    {% elif status_option == 'approved' %}
+                      Approved (Review)
+                    {% elif status_option == 'archived' %}
+                      Archived
+                    {% else %}
+                      {{ status_option|title }}
+                    {% endif %}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 col-md-6 mb-3">
+                <button type="submit" class="btn btn-primary w-100">
+                  Update Status
+                </button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-12">
+                <small class="text-muted">
+                  <strong>Note:</strong> Status changes are logged for audit purposes.
+                  Even if marked as "approved", this only means internal review approval,
+                  not GST filing approval.
+                </small>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer Info -->
+  <div class="row">
+    <div class="col-12">
+      <div class="alert alert-info">
+        <strong>ℹ️ Review Pack Information:</strong>
+        <br>
+        This pack aggregates sales data, purchase data, reconciliation results, pending documents,
+        and risk flags for CA/staff review. It is deterministic and rule-based (no AI/Paperclip).
+        <br>
+        <strong>It does NOT:</strong> compute final ITC, file GSTR-3B, or approve filing.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

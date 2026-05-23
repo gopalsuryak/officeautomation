@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{% block title %}CA Assist{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet"/>
+</head>
+<body>
+{% set on_dashboard = request.endpoint == 'dashboard' %}
+{% set on_clients = request.endpoint in ['clients_list', 'clients_new', 'clients_detail', 'clients_edit'] %}
+{% set on_tasks = request.endpoint in ['tasks_list', 'new_task', 'task_detail', 'task_edit', 'task_status', 'task_comments', 'task_add_document_request', 'task_sync_ai', 'task_send_to_ai', 'task_review_action'] %}
+{% set on_ai_automation = request.endpoint in ['automation_center', 'automation_retry_ai', 'automation_sync_ai'] %}
+{% set on_registry = request.endpoint == 'automation_registry_page' %}
+{% set on_credentials = request.endpoint in ['credentials_page', 'credentials_new', 'credential_detail', 'credential_status_update', 'credential_verify_manual', 'credential_check_readiness'] %}
+{% set on_portal_readiness = request.endpoint == 'portal_readiness_page' %}
+{% set on_accounting_connectors = request.endpoint in ['accounting_connectors_page', 'accounting_connectors_new', 'accounting_connection_detail', 'accounting_connection_status_update'] %}
+{% set on_accounting_data = request.endpoint in ['accounting_data_page', 'accounting_ledger_detail'] %}
+{% set on_gst_reconciliation = request.endpoint in ['gst_reconciliation_page', 'gst_reconciliation_run', 'gst_reconciliation_detail'] %}
+{% set on_gst_dashboard = request.endpoint == 'gst_dashboard_page' %}
+{% set on_voice_assistant = request.endpoint in ['voice_assistant_page', 'voice_assistant_parse', 'voice_assistant_execute'] %}
+{% set on_document_communications = request.endpoint in ['document_communications_register', 'document_communication_draft_detail', 'document_communication_draft_print', 'document_communication_draft_download', 'mark_document_communication_draft_reviewed', 'archive_document_communication_draft'] %}
+{% set on_email_queue = request.endpoint in ['email_queue_list', 'email_queue_detail', 'update_email_queue_status', 'queue_email_from_draft', 'assign_email_queue_provider', 'mark_email_queue_ready_with_provider', 'add_email_queue_failure_review', 'reopen_email_queue_after_failure'] %}
+{% set on_email_delivery_logs = request.endpoint == 'email_delivery_logs_page' %}
+{% set on_email_providers = request.endpoint in ['email_provider_settings_page', 'email_provider_settings_new', 'email_provider_setting_detail', 'email_provider_setting_status_update', 'email_provider_setting_set_default', 'email_provider_setting_check'] %}
+{% set on_email_operations = request.endpoint == 'email_operations_page' %}
+{% set on_email_qa_dashboard = request.endpoint == 'email_qa_dashboard_page' %}
+{% set on_email_readiness = request.endpoint in ['email_readiness_page', 'email_readiness_update'] %}
+{% set on_usage = request.endpoint == 'usage_page' %}
+{% set on_audit = request.endpoint == 'audit_logs' %}
+
+<div class="d-flex app-layout">
+  {% if session.user_id %}
+  <aside class="app-sidebar d-none d-lg-flex flex-column">
+    <a class="sidebar-brand" href="{{ url_for('dashboard') }}">
+      <i class="bi bi-calculator-fill"></i>
+      <span>CA Assist</span>
+    </a>
+
+    <div class="sidebar-section">
+      <p class="sidebar-title">Main</p>
+      <a href="{{ url_for('dashboard') }}" class="sidebar-link {{ 'active' if on_dashboard else '' }}"><i class="bi bi-grid-fill"></i>Dashboard</a>
+      <a href="{{ url_for('clients_list') }}" class="sidebar-link {{ 'active' if on_clients else '' }}"><i class="bi bi-people-fill"></i>Clients</a>
+      <a href="{{ url_for('tasks_list') }}" class="sidebar-link {{ 'active' if on_tasks else '' }}"><i class="bi bi-list-check"></i>Tasks</a>
+    </div>
+
+    {% if not current_role or current_role in ['owner', 'partner', 'manager'] %}
+    <div class="sidebar-section">
+      <p class="sidebar-title">AI</p>
+      <a href="{{ url_for('automation_center') }}" class="sidebar-link {{ 'active' if on_ai_automation else '' }}"><i class="bi bi-cpu"></i>AI Automation</a>
+      <a href="{{ url_for('automation_registry_page') }}" class="sidebar-link {{ 'active' if on_registry else '' }}"><i class="bi bi-diagram-3"></i>Automation Registry</a>
+      <a href="{{ url_for('credentials_page') }}" class="sidebar-link {{ 'active' if on_credentials else '' }}"><i class="bi bi-key"></i>Credential Vault</a>
+      <a href="{{ url_for('portal_readiness_page') }}" class="sidebar-link {{ 'active' if on_portal_readiness else '' }}"><i class="bi bi-shield-check"></i>Portal Readiness</a>
+      <a href="{{ url_for('accounting_connectors_page') }}" class="sidebar-link {{ 'active' if on_accounting_connectors else '' }}"><i class="bi bi-plug"></i>Accounting Connectors</a>
+      <a href="{{ url_for('accounting_data_page') }}" class="sidebar-link {{ 'active' if on_accounting_data else '' }}"><i class="bi bi-table"></i>Accounting Data</a>
+      <a href="{{ url_for('gst_reconciliation_page') }}" class="sidebar-link {{ 'active' if on_gst_reconciliation else '' }}"><i class="bi bi-receipt-cutoff"></i>GST Reconciliation</a>
+      <a href="{{ url_for('gst_dashboard_page') }}" class="sidebar-link {{ 'active' if on_gst_dashboard else '' }}"><i class="bi bi-speedometer2"></i>GST Control Room</a>
+      <a href="{{ url_for('gstr3b_review_packs_list') }}" class="sidebar-link {{ 'active' if on_gstr3b_review_packs else '' }}"><i class="bi bi-file-text"></i>GSTR-3B Review Packs</a>
+      <a href="{{ url_for('voice_assistant_page') }}" class="sidebar-link {{ 'active' if on_voice_assistant else '' }}"><i class="bi bi-mic-fill"></i>Jarvis Assistant</a>
+    </div>
+    {% endif %}
+
+    <div class="sidebar-section">
+      <p class="sidebar-title">Communications</p>
+      <a href="{{ url_for('document_communications_register') }}" class="sidebar-link {{ 'active' if on_document_communications else '' }}"><i class="bi bi-envelope-open-text"></i>Communication Drafts</a>
+      <a href="{{ url_for('email_queue_list') }}" class="sidebar-link {{ 'active' if on_email_queue else '' }}"><i class="bi bi-envelope"></i>Email Queue</a>
+      <a href="{{ url_for('email_delivery_logs_page') }}" class="sidebar-link {{ 'active' if on_email_delivery_logs else '' }}"><i class="bi bi-journal-text"></i>Email Delivery Logs</a>
+      <a href="{{ url_for('email_provider_settings_page') }}" class="sidebar-link {{ 'active' if on_email_providers else '' }}"><i class="bi bi-sliders"></i>Email Providers</a>
+      <a href="{{ url_for('email_operations_page') }}" class="sidebar-link {{ 'active' if on_email_operations else '' }}"><i class="bi bi-activity"></i>Email Operations</a>
+      <a href="{{ url_for('email_qa_dashboard_page') }}" class="sidebar-link {{ 'active' if on_email_qa_dashboard else '' }}"><i class="bi bi-clipboard2-check"></i>Email QA Dashboard</a>
+      <a href="{{ url_for('email_readiness_page') }}" class="sidebar-link {{ 'active' if on_email_readiness else '' }}"><i class="bi bi-check2-square"></i>Email Readiness</a>
+    </div>
+
+    <div class="sidebar-section pb-3">
+      <p class="sidebar-title">Operations</p>
+      <a href="{{ url_for('usage_page') }}" class="sidebar-link {{ 'active' if on_usage else '' }}"><i class="bi bi-bar-chart-line"></i>Plan & Usage</a>
+      {% if current_role in ['owner', 'partner', 'manager'] %}
+      <a href="{{ url_for('audit_logs') }}" class="sidebar-link {{ 'active' if on_audit else '' }}"><i class="bi bi-shield-check"></i>Audit Logs</a>
+      {% endif %}
+    </div>
+  </aside>
+  {% endif %}
+
+  <main class="app-main flex-grow-1">
+    <header class="topbar">
+      <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+        <div class="d-flex align-items-center gap-2">
+          {% if session.user_id %}
+          <button id="sidebarToggleBtn" class="btn btn-outline-secondary btn-sm d-lg-none" type="button" aria-label="Toggle navigation">
+            <i class="bi bi-list"></i>
+          </button>
+          {% endif %}
+          <div>
+            <h1 class="topbar-title">{% block topbar_title %}CA Assist{% endblock %}</h1>
+            <p class="topbar-subtitle">{% block topbar_subtitle %}Compliance operations workspace{% endblock %}</p>
+          </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          {% if current_role %}
+          <span class="meta-chip">Role: {{ current_role|capitalize }}</span>
+          {% endif %}
+          {% if current_tenant %}
+          <span class="meta-chip">Tenant #{{ current_tenant.id }}</span>
+          {% endif %}
+          {% if session.user_id %}
+          <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Logout</a>
+          {% else %}
+          <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-sm">Login</a>
+          <a href="{{ url_for('signup') }}" class="btn btn-primary btn-sm">Get Started</a>
+          {% endif %}
+        </div>
+      </div>
+    </header>
+
+    <section class="page-wrap">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }} alert-dismissible fade show rounded-3" role="alert">
+          {{ msg }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </section>
+  </main>
+</div>
+
+{% if session.user_id %}
+<div class="offcanvas offcanvas-start" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
+  <div class="offcanvas-header border-bottom">
+    <h5 class="offcanvas-title" id="mobileSidebarLabel"><i class="bi bi-calculator-fill me-1 text-primary"></i>CA Assist</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  </div>
+  <div class="offcanvas-body p-0">
+    <div class="list-group list-group-flush">
+      <a class="list-group-item list-group-item-action {{ 'active' if on_dashboard else '' }}" href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_clients else '' }}" href="{{ url_for('clients_list') }}">Clients</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_tasks else '' }}" href="{{ url_for('tasks_list') }}">Tasks</a>
+      {% if not current_role or current_role in ['owner', 'partner', 'manager'] %}
+      <a class="list-group-item list-group-item-action {{ 'active' if on_ai_automation else '' }}" href="{{ url_for('automation_center') }}">AI Automation</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_registry else '' }}" href="{{ url_for('automation_registry_page') }}">Automation Registry</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_credentials else '' }}" href="{{ url_for('credentials_page') }}">Credential Vault</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_portal_readiness else '' }}" href="{{ url_for('portal_readiness_page') }}">Portal Readiness</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_accounting_connectors else '' }}" href="{{ url_for('accounting_connectors_page') }}">Accounting Connectors</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_accounting_data else '' }}" href="{{ url_for('accounting_data_page') }}">Accounting Data</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_gst_reconciliation else '' }}" href="{{ url_for('gst_reconciliation_page') }}">GST Reconciliation</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_gst_dashboard else '' }}" href="{{ url_for('gst_dashboard_page') }}">GST Control Room</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_gstr3b_review_packs else '' }}" href="{{ url_for('gstr3b_review_packs_list') }}">GSTR-3B Review Packs</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_voice_assistant else '' }}" href="{{ url_for('voice_assistant_page') }}">Jarvis Assistant</a>
+      {% endif %}
+      <a class="list-group-item list-group-item-action {{ 'active' if on_document_communications else '' }}" href="{{ url_for('document_communications_register') }}">Communication Drafts</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_email_queue else '' }}" href="{{ url_for('email_queue_list') }}">Email Queue</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_email_delivery_logs else '' }}" href="{{ url_for('email_delivery_logs_page') }}">Email Delivery Logs</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_email_providers else '' }}" href="{{ url_for('email_provider_settings_page') }}">Email Providers</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_email_operations else '' }}" href="{{ url_for('email_operations_page') }}">Email Operations</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_email_qa_dashboard else '' }}" href="{{ url_for('email_qa_dashboard_page') }}">Email QA Dashboard</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_email_readiness else '' }}" href="{{ url_for('email_readiness_page') }}">Email Readiness</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_usage else '' }}" href="{{ url_for('usage_page') }}">Plan & Usage</a>
+      {% if current_role in ['owner', 'partner', 'manager'] %}
+      <a class="list-group-item list-group-item-action {{ 'active' if on_audit else '' }}" href="{{ url_for('audit_logs') }}">Audit Logs</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

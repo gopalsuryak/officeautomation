@@ -1,0 +1,576 @@
+    <!-- Document Communication Drafts Section -->
+    <div class="card mb-3">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0">Document Communication Drafts</h6>
+      </div>
+      <div class="card-body">
+        <div class="mb-2 small text-muted">Drafts are internal only. CA Assist does not send email or WhatsApp in this phase.</div>
+        {% set has_pending_requests = document_requests|selectattr('status', 'equalto', 'requested')|list|length > 0 %}
+        {% if has_pending_requests %}
+        <form method="post" action="{{ url_for('create_document_communication_draft_route', task_id=task.id) }}" class="d-inline me-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <input type="hidden" name="draft_type" value="email" />
+          <button type="submit" class="btn btn-outline-primary btn-sm">Generate Email Draft</button>
+        </form>
+        <form method="post" action="{{ url_for('create_document_communication_draft_route', task_id=task.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <input type="hidden" name="draft_type" value="whatsapp" />
+          <button type="submit" class="btn btn-outline-success btn-sm">Generate WhatsApp Draft</button>
+        </form>
+        {% endif %}
+        {% if document_communication_drafts %}
+        <div class="table-responsive mt-3">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Created</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Subject</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for d in document_communication_drafts %}
+              <tr>
+                <td class="small">{{ d.created_at[:16] if d.created_at else '-' }}</td>
+                <td class="small text-capitalize">{{ d.draft_type }}</td>
+                <td class="small text-capitalize">{{ d.status }}</td>
+                <td class="small">{{ d.subject or '-' }}</td>
+                <td>
+                  <a href="{{ url_for('document_communication_draft_detail', draft_id=d.id) }}" class="btn btn-link btn-sm">View</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% elif not has_pending_requests %}
+        <div class="py-2"><span class="small text-muted">No drafts or pending document requests.</span></div>
+        {% endif %}
+      </div>
+    </div>
+{% extends "base.html" %}
+{% block title %}{{ task.title }} - Compliance Task{% endblock %}
+{% block topbar_title %}Task Detail{% endblock %}
+{% block topbar_subtitle %}Review workflow, AI drafting, documents, and timeline in one place{% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+  <div class="card-body d-flex justify-content-between align-items-start flex-wrap gap-3">
+    <div>
+      <a href="{{ url_for('tasks_list') }}" class="text-muted small text-decoration-none">
+        <i class="bi bi-arrow-left me-1"></i>Back to Tasks
+      </a>
+      <h4 class="fw-bold mt-2 mb-1">{{ task.title }}</h4>
+      <p class="page-subtle small mb-2">{{ task_type_labels.get(task.task_type, task.task_type) }} for {{ task.client_name }}</p>
+      <div class="d-flex flex-wrap gap-2">
+        <span class="status-badge status-{{ task.status }}">{{ status_labels.get(task.status, task.status) }}</span>
+        <span class="status-badge">Priority: {{ task.priority|capitalize }}</span>
+        <span class="status-badge">Due: {{ task.due_date or '-' }}</span>
+      </div>
+    </div>
+  <div class="d-flex gap-2">
+    {% if can_sync_ai_result %}
+    <form method="POST" action="{{ url_for('task_sync_ai', task_id=task.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-outline-primary">Refresh AI Result</button>
+    </form>
+    {% endif %}
+    {% if can_send_to_ai %}
+    <form method="POST" action="{{ url_for('task_send_to_ai', task_id=task.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-primary">Send to AI Drafting</button>
+    </form>
+    {% endif %}
+    {% if task.paperclip_issue_id %}
+    <a href="{{ url_for('automation_center') }}" class="btn btn-outline-secondary btn-sm"
+       title="View this task in the AI Automation Center">
+      <i class="bi bi-cpu me-1"></i>View in AI Automation Center
+    </a>
+    {% endif %}
+    <a href="{{ url_for('tasks_list') }}" class="btn btn-outline-secondary">Back to Tasks</a>
+  </div>
+  </div>
+</div>
+
+{% if task.status == 'draft' %}
+<div class="alert alert-info rounded-3">
+  Move this task to <strong>Ready for AI</strong> before sending it for AI drafting.
+</div>
+{% elif task.status == 'changes_required' and not can_send_to_ai %}
+<div class="alert alert-info rounded-3">
+  Move this task to <strong>Ready for AI</strong> to send it for another AI drafting pass.
+</div>
+{% endif %}
+
+<div class="card mb-4">
+  <div class="card-body p-4">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="small text-muted">Status</div>
+        <div><span class="status-badge status-{{ task.status }}">{{ status_labels.get(task.status, task.status) }}</span></div>
+      </div>
+      <div class="col-md-3">
+        <div class="small text-muted">Due Date</div>
+        <div class="fw-semibold">{{ task.due_date or '-' }}</div>
+      </div>
+      <div class="col-md-3">
+        <div class="small text-muted">Priority</div>
+        <div class="fw-semibold">{{ task.priority|capitalize }}</div>
+      </div>
+      <div class="col-12">
+        <div class="small text-muted">Description</div>
+        <div>{{ task.description or '-' }}</div>
+      </div>
+      <div class="col-md-4">
+        <div class="small text-muted">Period</div>
+        <div>{{ task.period or '-' }}</div>
+      </div>
+      <div class="col-md-4">
+        <div class="small text-muted">Financial Year</div>
+        <div>{{ task.financial_year or '-' }}</div>
+      </div>
+      <div class="col-md-4">
+        <div class="small text-muted">Pending From</div>
+        <div>{{ task.pending_from|capitalize }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if linked_gst_reconciliations %}
+<div class="card mb-4">
+  <div class="card-header bg-white"><h6 class="fw-bold mb-0">Linked GST Reconciliations</h6></div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Run Date</th>
+            <th>Matched</th>
+            <th>Missing in 2B</th>
+            <th>Missing in Books</th>
+            <th>Amount Mismatch</th>
+            <th>Tax Mismatch</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in linked_gst_reconciliations %}
+          <tr>
+            <td class="small">{{ item.created_at[:16] if item.created_at else '-' }}</td>
+            <td class="small">{{ item.matched_count or 0 }}</td>
+            <td class="small">{{ item.missing_in_2b_count or 0 }}</td>
+            <td class="small">{{ item.missing_in_books_count or 0 }}</td>
+            <td class="small">{{ item.amount_mismatch_count or 0 }}</td>
+            <td class="small">{{ item.tax_mismatch_count or 0 }}</td>
+            <td>
+              <a class="btn btn-outline-primary btn-sm" href="{{ url_for('gst_reconciliation_detail', run_id=item.id) }}">View Reconciliation</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header bg-white"><h6 class="fw-bold mb-0">Client Details</h6></div>
+      <div class="card-body small">
+        <div><strong>Client:</strong> {{ task.client_name }}</div>
+        <div><strong>Entity Type:</strong> {{ task.client_entity_type or '-' }}</div>
+        <div><strong>PAN:</strong> {{ task.client_pan or '-' }}</div>
+        <div><strong>GSTIN:</strong> {{ task.client_gstin or '-' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="card h-100">
+      <div class="card-header bg-white"><h6 class="fw-bold mb-0">Update Basic Details</h6></div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('task_edit', task_id=task.id) }}" class="row g-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <div class="col-md-8">
+            <label class="form-label small">Title</label>
+            <input type="text" class="form-control" name="title" value="{{ task.title }}" required />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Priority</label>
+            <select class="form-select" name="priority">
+              {% for p in ['low', 'normal', 'high', 'urgent'] %}
+              <option value="{{ p }}" {% if task.priority == p %}selected{% endif %}>{{ p|capitalize }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Period</label>
+            <input type="text" class="form-control" name="period" value="{{ task.period or '' }}" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Financial Year</label>
+            <input type="text" class="form-control" name="financial_year" value="{{ task.financial_year or '' }}" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Due Date</label>
+            <input type="date" class="form-control" name="due_date" value="{{ task.due_date or '' }}" />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Assigned User ID</label>
+            <input type="number" class="form-control" min="1" name="assigned_user_id" value="{{ task.assigned_user_id or '' }}" />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Reviewer User ID</label>
+            <input type="number" class="form-control" min="1" name="reviewer_user_id" value="{{ task.reviewer_user_id or '' }}" />
+          </div>
+          <div class="col-12">
+            <label class="form-label small">Description</label>
+            <textarea class="form-control" rows="2" name="description">{{ task.description or '' }}</textarea>
+          </div>
+          <div class="col-12 text-end">
+            <button type="submit" class="btn btn-outline-primary btn-sm">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header bg-white"><h6 class="fw-bold mb-0">Human Review &amp; Approval</h6></div>
+      <div class="card-body">
+        <div class="small text-muted mb-3">Current Status: <strong>{{ status_labels.get(task.status, task.status) }}</strong></div>
+
+        {% if available_review_actions %}
+        <div class="row g-2">
+          {% for review_action in available_review_actions %}
+          <div class="col-md-6">
+            <form method="POST" action="{{ url_for('task_review_action', task_id=task.id) }}" class="border rounded-3 p-3 bg-light-subtle">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+              <input type="hidden" name="action" value="{{ review_action.action }}" />
+              <label class="form-label small text-muted mb-1">Comment (optional)</label>
+              <textarea name="comment" class="form-control form-control-sm mb-2" rows="2" placeholder="Add review note"></textarea>
+
+              {% if review_action.action == 'send_for_review' %}
+                {% set btn_class = 'btn-primary' %}
+              {% elif review_action.action == 'approve' %}
+                {% set btn_class = 'btn-success' %}
+              {% elif review_action.action == 'request_changes' %}
+                {% set btn_class = 'btn-warning' %}
+              {% elif review_action.action == 'mark_filed' %}
+                {% set btn_class = 'btn-info' %}
+              {% elif review_action.action == 'close' %}
+                {% set btn_class = 'btn-secondary' %}
+              {% else %}
+                {% set btn_class = 'btn-outline-danger' %}
+              {% endif %}
+
+              <button type="submit" class="btn {{ btn_class }} btn-sm">
+                {{ review_action.label }}
+              </button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="small text-muted">No further review actions available.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header bg-white"><h6 class="fw-bold mb-0">Status Action</h6></div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('task_status', task_id=task.id) }}" class="row g-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <div class="col-md-6">
+            <label class="form-label small">Next Status</label>
+            <select name="new_status" class="form-select" required>
+              <option value="">Select</option>
+              {% for status in next_statuses %}
+              {% if status in ['draft', 'pending_documents', 'ready_for_ai', 'ai_failed'] %}
+              <option value="{{ status }}">{{ status_labels.get(status, status) }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Reason</label>
+            <input type="text" name="reason" class="form-control" placeholder="Optional note" />
+          </div>
+          <div class="col-12 text-end">
+            <button type="submit" class="btn btn-primary btn-sm" {% if not next_statuses %}disabled{% endif %}>Change Status</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header bg-white"><h6 class="fw-bold mb-0">Comments</h6></div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('task_comments', task_id=task.id) }}" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <textarea name="body" class="form-control" rows="2" placeholder="Add comment" required></textarea>
+          <div class="text-end mt-2">
+            <button type="submit" class="btn btn-outline-primary btn-sm">Add Comment</button>
+          </div>
+        </form>
+
+        {% if comments %}
+          <div class="list-group list-group-flush">
+            {% for c in comments %}
+            <div class="list-group-item px-0">
+              <div class="d-flex justify-content-between">
+                <div class="small fw-semibold">{{ c.user_name or 'System' }} <span class="text-muted fw-normal">({{ c.comment_type }})</span></div>
+                <div class="small text-muted">{{ c.created_at[:16] if c.created_at else '' }}</div>
+              </div>
+              <div class="small mt-1">{{ c.body }}</div>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty-state"><div class="small text-muted">No comments yet.</div></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header bg-white"><h6 class="fw-bold mb-0">Status Timeline</h6></div>
+      <div class="card-body">
+        {% if history %}
+        <div class="list-group list-group-flush">
+          {% for h in history %}
+          <div class="list-group-item px-0">
+            <div class="small fw-semibold">
+              {{ status_labels.get(h.new_status, h.new_status) }}
+              {% if h.old_status %}
+              <span class="text-muted fw-normal">from {{ status_labels.get(h.old_status, h.old_status) }}</span>
+              {% endif %}
+            </div>
+            <div class="small text-muted">By {{ h.changed_by_name or 'System' }} on {{ h.created_at[:16] if h.created_at else '' }}</div>
+            {% if h.reason %}<div class="small">Reason: {{ h.reason }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state"><div class="small text-muted">No status history yet.</div></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card mb-3">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0">Document Requests</h6>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('task_add_document_request', task_id=task.id) }}" class="border rounded-3 p-3 mb-3 bg-light-subtle">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label small">Document Name</label>
+              <input type="text" name="document_name" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Requested From</label>
+              <select name="requested_from" class="form-select form-select-sm">
+                <option value="client" selected>Client</option>
+                <option value="staff">Staff</option>
+                <option value="reviewer">Reviewer</option>
+                <option value="partner">Partner</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Description</label>
+              <textarea name="description" class="form-control form-control-sm" rows="2" placeholder="Optional details"></textarea>
+            </div>
+            <div class="col-12 text-end">
+              <button type="submit" class="btn btn-outline-primary btn-sm">Add Document Request</button>
+            </div>
+          </div>
+        </form>
+
+        {% if document_requests %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Document</th>
+                  <th>Description</th>
+                  <th>From</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Received</th>
+                  <th>Notes</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for d in document_requests %}
+                <tr>
+                  <td class="small fw-semibold">{{ d.document_name }}</td>
+                  <td class="small text-muted">{{ d.description or '-' }}</td>
+                  <td class="small">{{ d.requested_from or '-' }}</td>
+                  <td class="small">{{ document_status_labels.get(d.status, d.status) }}</td>
+                  <td class="small">{{ d.created_at[:16] if d.created_at else '-' }}</td>
+                  <td class="small">{{ d.received_at[:16] if d.received_at else '-' }}</td>
+                  <td class="small text-muted" style="white-space:pre-wrap;">{{ d.notes or '-' }}</td>
+                  <td>
+                    {% if d.status == 'requested' %}
+                      <div class="d-flex flex-column gap-1">
+                        <form method="POST" action="{{ url_for('document_request_status', request_id=d.id) }}" class="d-flex gap-1">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                          <input type="hidden" name="new_status" value="received" />
+                          <input type="text" name="note" class="form-control form-control-sm" placeholder="Optional note" />
+                          <button type="submit" class="btn btn-success btn-sm">Mark Received</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('document_request_status', request_id=d.id) }}" class="d-flex gap-1">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                          <input type="hidden" name="new_status" value="waived" />
+                          <input type="text" name="note" class="form-control form-control-sm" placeholder="Optional note" />
+                          <button type="submit" class="btn btn-outline-warning btn-sm">Waive</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('document_request_status', request_id=d.id) }}" class="d-flex gap-1">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                          <input type="hidden" name="new_status" value="not_required" />
+                          <input type="text" name="note" class="form-control form-control-sm" placeholder="Optional note" />
+                          <button type="submit" class="btn btn-outline-secondary btn-sm">Not Required</button>
+                        </form>
+                      </div>
+                    {% else %}
+                      <span class="small text-muted">Resolved</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="py-3">
+            <div class="empty-state"><div class="small text-muted">No document requests yet.</div></div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0">AI Output</h6>
+        {% if latest_ai_output and latest_ai_output.created_at %}
+        <span class="small text-muted">{{ latest_ai_output.created_at[:16] }}</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if latest_ai_output %}
+          <div class="mb-3 d-flex gap-2 flex-wrap">
+            <span class="badge text-bg-light border">
+              Status: {{ latest_ai_output.status_recommendation or 'review_required' }}
+            </span>
+            {% set confidence = latest_ai_output.confidence or 'low' %}
+            {% if confidence == 'high' %}
+              <span class="badge text-bg-success">Confidence: High</span>
+            {% elif confidence == 'medium' %}
+              <span class="badge text-bg-warning">Confidence: Medium</span>
+            {% else %}
+              <span class="badge text-bg-secondary">Confidence: Low</span>
+            {% endif %}
+          </div>
+
+          <div class="small fw-semibold mb-1">Risk Flags</div>
+          {% if latest_ai_output.risk_flags_list %}
+            <ul class="small mb-3">
+              {% for item in latest_ai_output.risk_flags_list %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <div class="small text-muted mb-3">None</div>
+          {% endif %}
+
+          <div class="small fw-semibold mb-1">Missing Inputs</div>
+          {% if latest_ai_output.missing_inputs_list %}
+            <ul class="small mb-3">
+              {% for item in latest_ai_output.missing_inputs_list %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <div class="small text-muted mb-3">None</div>
+          {% endif %}
+
+          <div class="small fw-semibold mb-1">Applicable Laws / Sections</div>
+          {% if latest_ai_output.applicable_laws_list %}
+            <ul class="small mb-3">
+              {% for item in latest_ai_output.applicable_laws_list %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <div class="small text-muted mb-3">None</div>
+          {% endif %}
+
+          <div class="small fw-semibold mb-1">Client Message Draft</div>
+          <div class="small text-muted mb-3" style="white-space:pre-wrap;">{{ latest_ai_output.client_message_draft or '-' }}</div>
+
+          <div class="small fw-semibold mb-1">Internal Working Note</div>
+          <div class="small text-muted mb-3" style="white-space:pre-wrap;">{{ latest_ai_output.internal_working_note or '-' }}</div>
+
+          <div class="small fw-semibold mb-1">Final Output</div>
+          <div class="small" style="white-space:pre-wrap;">{{ latest_ai_output.output_markdown or '-' }}</div>
+        {% else %}
+          <div class="empty-state"><div class="small text-muted">No synced AI output yet. Use Refresh AI Result after background processing.</div></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header bg-white"><h6 class="fw-bold mb-0">Review History</h6></div>
+  <div class="card-body">
+    {% if review_actions %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Action</th>
+            <th>Reviewer/User ID</th>
+            <th>Comment</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in review_actions %}
+          <tr>
+            <td class="small">{{ r.created_at[:16] if r.created_at else '-' }}</td>
+            <td class="small fw-semibold">{{ review_action_labels.get(r.action, r.action) }}</td>
+            <td class="small">{{ r.reviewer_user_id or '-' }}</td>
+            <td class="small text-muted">{{ r.comment or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><div class="small text-muted">No review actions yet.</div></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

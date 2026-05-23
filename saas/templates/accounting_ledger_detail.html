@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Ledger Detail — CA Assist{% endblock %}
+{% block topbar_title %}Accounting Ledger Detail{% endblock %}
+{% block topbar_subtitle %}Read-only view of imported ledger data{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-start justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1"><i class="bi bi-journal-text text-primary me-2"></i>{{ ledger.ledger_name }}</h3>
+    <p class="page-subtle mb-0">Imported ledger profile</p>
+  </div>
+  <a href="{{ url_for('accounting_data_page') }}" class="btn btn-outline-secondary btn-sm">Back to Accounting Data</a>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Ledger Profile</div>
+  <div class="card-body">
+    <div class="row g-2 small">
+      <div class="col-md-4"><span class="text-muted">Client:</span> {{ ledger.client_name }}</div>
+      <div class="col-md-4"><span class="text-muted">Connection:</span> {{ ledger.connection_name or '-' }}</div>
+      <div class="col-md-4"><span class="text-muted">Provider:</span> {{ ledger.provider or '-' }}</div>
+      <div class="col-md-4"><span class="text-muted">Ledger Name:</span> {{ ledger.ledger_name }}</div>
+      <div class="col-md-4"><span class="text-muted">Group:</span> {{ ledger.group_name_display or '-' }}</div>
+      <div class="col-md-4"><span class="text-muted">Opening Balance:</span> {{ "%.2f"|format(ledger.opening_balance or 0) }}</div>
+      <div class="col-md-4"><span class="text-muted">Closing Balance:</span> {{ "%.2f"|format(ledger.closing_balance or 0) }}</div>
+      <div class="col-md-8"><span class="text-muted">Imported At:</span> {{ ledger.created_at or '-' }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="accordion" id="rawJsonAccordion">
+  <div class="accordion-item">
+    <h2 class="accordion-header" id="rawJsonHeading">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#rawJsonCollapse" aria-expanded="false" aria-controls="rawJsonCollapse">
+        Raw JSON Preview
+      </button>
+    </h2>
+    <div id="rawJsonCollapse" class="accordion-collapse collapse" aria-labelledby="rawJsonHeading" data-bs-parent="#rawJsonAccordion">
+      <div class="accordion-body">
+        <pre class="mb-0" style="white-space: pre-wrap;">{{ raw_json_pretty }}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

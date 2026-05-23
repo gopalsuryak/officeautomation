@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Accounting Connection Detail — CA Assist{% endblock %}
+{% block topbar_title %}Accounting Connection Detail{% endblock %}
+{% block topbar_subtitle %}Connector foundation state and status controls{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-start justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1"><i class="bi bi-diagram-2-fill text-primary me-2"></i>{{ connection.connection_name }}</h3>
+    <p class="page-subtle mb-0">{{ provider_name }} connector for {{ connection.client_name }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('accounting_data_page', connection_id=connection.id) }}" class="btn btn-outline-primary btn-sm">View Imported Accounting Data</a>
+    <a href="{{ url_for('gst_reconciliation_page', client_entity_id=connection.client_entity_id) }}" class="btn btn-outline-primary btn-sm">GST Reconciliation</a>
+    <a href="{{ url_for('accounting_connectors_page') }}" class="btn btn-outline-secondary btn-sm">Back to Connectors</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header fw-semibold py-2">Connection Profile</div>
+      <div class="card-body">
+        <div class="mb-2"><span class="text-muted">Client:</span> {{ connection.client_name }}</div>
+        <div class="mb-2"><span class="text-muted">Provider:</span> {{ provider_name }}</div>
+        <div class="mb-2"><span class="text-muted">Name:</span> {{ connection.connection_name }}</div>
+        <div class="mb-2"><span class="text-muted">Status:</span> {{ connection.status }}</div>
+        <div class="mb-2"><span class="text-muted">Auth Type:</span> {{ connection.auth_type or '-' }}</div>
+        <div class="mb-2"><span class="text-muted">Last Sync:</span> {{ connection.last_sync_at or '-' }}</div>
+        <div class="mb-0"><span class="text-muted">Last Error:</span> {{ connection.last_error or '-' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header fw-semibold py-2">Provider Guidance</div>
+      <div class="card-body">
+        <p class="mb-0">{{ guidance }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Coming Soon Actions</div>
+  <div class="card-body d-flex flex-wrap gap-2">
+    {% if connection.provider == 'tally' %}
+    <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Download Local Bridge — Coming Soon</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Test Tally Connection — Coming Soon</button>
+    {% elif connection.provider == 'zoho_books' %}
+    <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Connect Zoho OAuth — Coming Soon</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Sync Zoho Books — Coming Soon</button>
+    {% elif connection.provider == 'manual_upload' %}
+    <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Validate Upload — Coming Soon</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Import to Ledgers/Vouchers — Coming Soon</button>
+    {% else %}
+    <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Connector Action — Coming Soon</button>
+    {% endif %}
+  </div>
+</div>
+
+{% if connection.provider == 'manual_upload' %}
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Upload File</div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('accounting_connection_upload', connection_id=connection.id) }}" enctype="multipart/form-data" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div class="col-md-4">
+        <label class="form-label">Upload Type</label>
+        <select class="form-select" name="upload_type" required>
+          {% for upload_type in upload_types %}
+          <option value="{{ upload_type }}">{{ upload_type }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">File</label>
+        <input type="file" class="form-control" name="file" required>
+      </div>
+      <div class="col-md-2 d-grid">
+        <button type="submit" class="btn btn-primary">Upload</button>
+      </div>
+      <div class="col-12">
+        <div class="small text-muted">
+          Allowed: .xlsx, .xls, .csv, .xml. Max {{ max_file_size_mb }} MB. Files are stored only; parsing comes next. Upload GSTR-2B CSV/XLS/XLSX export. This phase previews and validates only. Reconciliation comes later.
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Uploaded Files</div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle small">
+      <thead class="table-light">
+        <tr>
+          <th>Original Filename</th>
+          <th>Upload Type</th>
+          <th>Extension</th>
+          <th>Size</th>
+          <th>Status</th>
+          <th>Validation Status</th>
+          <th>Validation Message</th>
+          <th>Uploaded At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for uploaded in uploaded_files %}
+        {% set preview = preview_by_uploaded_file_id.get(uploaded.id) %}
+        <tr>
+          <td>{{ uploaded.original_filename }}</td>
+          <td>{{ uploaded.upload_type or '-' }}</td>
+          <td>{{ uploaded.file_ext or '-' }}</td>
+          <td>{{ uploaded.file_size_bytes or 0 }}</td>
+          <td><span class="status-badge">{{ uploaded.status }}</span></td>
+          <td><span class="status-badge">{{ preview.validation_status if preview else 'pending' }}</span></td>
+          <td>{{ uploaded.validation_message or '-' }}</td>
+          <td>{{ uploaded.created_at or '-' }}</td>
+          <td>
+            {% if uploaded.file_ext in ['.csv', '.xlsx', '.xls'] %}
+            <form method="POST" action="{{ url_for('accounting_upload_parse_preview', uploaded_file_id=uploaded.id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+              <button type="submit" class="btn btn-outline-primary btn-sm mb-1">Parse Preview</button>
+            </form>
+            {% elif uploaded.file_ext == '.xml' %}
+            <button type="button" class="btn btn-outline-secondary btn-sm mb-1" disabled>XML parser later</button>
+            {% else %}
+            <button type="button" class="btn btn-outline-secondary btn-sm mb-1" disabled>Unsupported</button>
+            {% endif %}
+
+            {% if preview %}
+            <a href="{{ url_for('accounting_upload_preview_page', uploaded_file_id=uploaded.id) }}" class="btn btn-outline-secondary btn-sm">View Preview</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10" class="text-center text-muted py-4">No uploaded files yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if import_summary %}
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Imported Accounting Data</div>
+  <div class="card-body">
+    <div class="row g-2 small mb-3">
+      <div class="col-md-4"><span class="text-muted">Ledger rows imported:</span> {{ import_summary.ledger_count or 0 }}</div>
+      <div class="col-md-4"><span class="text-muted">Voucher rows imported:</span> {{ import_summary.voucher_count or 0 }}</div>
+      <div class="col-md-4"><span class="text-muted">Sales invoices imported:</span> {{ import_summary.sales_invoice_count or 0 }}</div>
+        <div class="col-md-4"><span class="text-muted">Purchase invoices imported:</span> {{ import_summary.purchase_invoice_count or 0 }}</div>
+      <div class="col-md-4"><span class="text-muted">Invoice lines imported:</span> {{ import_summary.invoice_line_count or 0 }}</div>
+      <div class="col-md-4"><span class="text-muted">Latest ledger import:</span> {{ import_summary.latest_ledger_import_at or '-' }}</div>
+      <div class="col-md-4"><span class="text-muted">Latest voucher import:</span> {{ import_summary.latest_voucher_import_at or '-' }}</div>
+        <div class="col-md-4"><span class="text-muted">Latest sales import:</span> {{ import_summary.latest_sales_import_at or '-' }}</div>
+        <div class="col-md-4"><span class="text-muted">Latest purchase import:</span> {{ import_summary.latest_purchase_import_at or '-' }}</div>
+    </div>
+
+    {% if import_summary.by_group %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Group</th>
+            <th>Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for group in import_summary.by_group %}
+          <tr>
+            <td>{{ group.group_name }}</td>
+            <td>{{ group.ledger_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Update Status</div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('accounting_connection_status_update', connection_id=connection.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div class="col-md-4">
+        <label class="form-label">Status</label>
+        <select class="form-select" name="status" required>
+          {% for status in statuses %}
+          <option value="{{ status }}" {% if connection.status == status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Error (optional)</label>
+        <input type="text" class="form-control" name="error" value="{{ connection.last_error or '' }}" placeholder="Set a status note or error detail">
+      </div>
+      <div class="col-md-2 d-grid">
+        <button type="submit" class="btn btn-primary">Update</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header fw-semibold py-2">Sync Runs</div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle small">
+      <thead class="table-light">
+        <tr>
+          <th>Sync Type</th>
+          <th>Status</th>
+          <th>Started</th>
+          <th>Completed</th>
+          <th>Records</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in sync_runs %}
+        <tr>
+          <td>{{ run.sync_type }}</td>
+          <td><span class="status-badge">{{ run.status }}</span></td>
+          <td>{{ run.started_at or '-' }}</td>
+          <td>{{ run.completed_at or '-' }}</td>
+          <td>{{ run.records_synced or 0 }}</td>
+          <td>{{ run.error_message or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-muted py-4">No sync runs yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ client.name }} - Client Profile{% endblock %}
+
+{% block content %}
+<div class="mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <a href="{{ url_for('clients_list') }}" class="text-muted small text-decoration-none">
+      <i class="bi bi-arrow-left me-1"></i>Back to Clients
+    </a>
+    <h4 class="fw-bold mt-2 mb-0">{{ client.name }}</h4>
+    <p class="text-muted small mb-0">Client profile and compliance snapshot</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('clients_edit', client_id=client.id) }}" class="btn btn-outline-primary">Edit Client</a>
+    <a href="{{ url_for('clients_list') }}" class="btn btn-outline-secondary">Back to Clients</a>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header bg-white">
+    <h6 class="fw-bold mb-0">Client Profile</h6>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4"><strong>Legal Name:</strong><br><span class="text-muted">{{ client.legal_name or '-' }}</span></div>
+      <div class="col-md-4"><strong>Entity Type:</strong><br><span class="text-muted">{{ client.entity_type or '-' }}</span></div>
+      <div class="col-md-4"><strong>Status:</strong><br>
+        {% if client.status == 'active' %}
+          <span class="badge text-bg-success">Active</span>
+        {% else %}
+          <span class="badge text-bg-secondary">Inactive</span>
+        {% endif %}
+      </div>
+      <div class="col-md-4"><strong>PAN:</strong><br><span class="text-muted">{{ client.pan or '-' }}</span></div>
+      <div class="col-md-4"><strong>GSTIN:</strong><br><span class="text-muted">{{ client.gstin or '-' }}</span></div>
+      <div class="col-md-4"><strong>CIN:</strong><br><span class="text-muted">{{ client.cin or '-' }}</span></div>
+      <div class="col-md-4"><strong>Email:</strong><br><span class="text-muted">{{ client.email or '-' }}</span></div>
+      <div class="col-md-4"><strong>Phone:</strong><br><span class="text-muted">{{ client.phone or '-' }}</span></div>
+      <div class="col-md-4"><strong>State Code:</strong><br><span class="text-muted">{{ client.state_code or '-' }}</span></div>
+      <div class="col-12"><strong>Address:</strong><br><span class="text-muted">{{ client.address or '-' }}</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-2 col-6">
+    <div class="card text-center"><div class="card-body"><div class="small text-muted">Total Tasks</div><div class="fs-4 fw-bold">{{ summary.total_tasks }}</div></div></div>
+  </div>
+  <div class="col-md-2 col-6">
+    <div class="card text-center"><div class="card-body"><div class="small text-muted">Open Tasks</div><div class="fs-4 fw-bold">{{ summary.open_tasks }}</div></div></div>
+  </div>
+  <div class="col-md-3 col-6">
+    <div class="card text-center"><div class="card-body"><div class="small text-muted">Pending Documents</div><div class="fs-4 fw-bold">{{ summary.pending_documents }}</div></div></div>
+  </div>
+  <div class="col-md-2 col-6">
+    <div class="card text-center"><div class="card-body"><div class="small text-muted">Under Review</div><div class="fs-4 fw-bold">{{ summary.under_review }}</div></div></div>
+  </div>
+  <div class="col-md-1 col-6">
+    <div class="card text-center"><div class="card-body"><div class="small text-muted">Filed</div><div class="fs-4 fw-bold">{{ summary.filed }}</div></div></div>
+  </div>
+  <div class="col-md-2 col-6">
+    <div class="card text-center"><div class="card-body"><div class="small text-muted">Approved</div><div class="fs-4 fw-bold">{{ summary.approved }}</div></div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h6 class="fw-bold mb-0">Recent Tasks</h6>
+  </div>
+
+  {% if recent_tasks %}
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Title</th>
+          <th>Task Type</th>
+          <th>Due Date</th>
+          <th>Status</th>
+          <th>Priority</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in recent_tasks %}
+        <tr>
+          <td>{{ task.title }}</td>
+          <td class="small text-muted">{{ task.task_type }}</td>
+          <td class="small">{{ task.due_date or '-' }}</td>
+          <td class="small">{{ task.status }}</td>
+          <td class="small">{{ task.priority }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-center py-4">
+    <div class="text-muted small">No compliance tasks yet for this client.</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

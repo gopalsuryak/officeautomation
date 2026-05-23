@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Complete Payment — CA Assist{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card p-4 p-md-5 text-center">
+      <i class="bi bi-credit-card-2-front-fill text-primary fs-2 mb-3"></i>
+      <h4 class="fw-bold">Complete Your Subscription</h4>
+      <p class="text-muted">{{ plan_data.name }} Plan — <strong>{{ plan_data.display }}/month</strong></p>
+      <p class="text-muted small">{{ plan_data.desc }}</p>
+
+      <div class="d-grid mt-3">
+        <button id="pay-btn" class="btn btn-primary btn-lg py-3">
+          <i class="bi bi-lock-fill me-2"></i>Pay Securely with Razorpay
+        </button>
+      </div>
+
+      <p class="text-muted small mt-3">
+        <i class="bi bi-shield-check me-1"></i>256-bit SSL · Your card details are never stored.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+  document.getElementById("pay-btn").addEventListener("click", function() {
+    var options = {
+      key:         "{{ razorpay_key }}",
+      amount:      "{{ order.amount }}",
+      currency:    "INR",
+      name:        "CA Assist",
+      description: "{{ plan_data.name }} Plan",
+      order_id:    "{{ order.id }}",
+      prefill: {
+        name:  "{{ user.name }}",
+        email: "{{ user.email }}",
+        contact: "{{ user.phone or '' }}",
+      },
+      theme: { color: "#1a56db" },
+      handler: function(response) {
+        fetch("/billing/verify", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": "{{ csrf_token() }}",
+          },
+          body: JSON.stringify({
+            razorpay_order_id:   response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature:  response.razorpay_signature,
+            plan:                "{{ plan }}",
+          })
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.ok) {
+            window.location.href = data.redirect;
+          } else {
+            alert("Payment verification failed. Please contact support.");
+          }
+        });
+      }
+    };
+    new Razorpay(options).open();
+  });
+</script>
+{% endblock %}

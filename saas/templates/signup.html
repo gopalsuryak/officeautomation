@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Sign Up — CA Assist{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card p-4 p-md-5">
+      <div class="text-center mb-4">
+        <i class="bi bi-person-plus-fill text-primary fs-2"></i>
+        <h4 class="fw-bold mt-2">Create Your Account</h4>
+        <p class="text-muted small">Setting up takes less than 2 minutes</p>
+      </div>
+
+      <form method="POST" action="{{ url_for('signup') }}" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <input type="hidden" name="plan" value="{{ plan }}"/>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Your Full Name</label>
+          <input type="text" name="name" class="form-control form-control-lg"
+                 placeholder="e.g. Rajesh Kumar" required/>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">CA Firm Name</label>
+          <input type="text" name="firm_name" class="form-control form-control-lg"
+                 placeholder="e.g. Kumar &amp; Associates" required/>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Email Address</label>
+          <input type="email" name="email" class="form-control form-control-lg"
+                 placeholder="you@yourfirm.com" required/>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Mobile Number</label>
+          <input type="tel" name="phone" class="form-control form-control-lg"
+                 placeholder="+91 98765 43210"/>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">GSTIN <span class="text-muted fw-normal">(optional)</span></label>
+          <input type="text" name="gstin" class="form-control form-control-lg"
+                 placeholder="27AAPFU0939F1ZV" maxlength="15"/>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-semibold">Password</label>
+          <input type="password" name="password" class="form-control form-control-lg"
+                 placeholder="Minimum 8 characters" required minlength="8"/>
+        </div>
+
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary btn-lg">
+            Continue to Payment &nbsp;<i class="bi bi-arrow-right"></i>
+          </button>
+        </div>
+      </form>
+
+      <hr class="my-4"/>
+      <p class="text-center text-muted small mb-0">
+        Already have an account? <a href="{{ url_for('login') }}">Log in</a>
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

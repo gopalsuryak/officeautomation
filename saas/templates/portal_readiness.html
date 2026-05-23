@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Portal Access Readiness — CA Assist{% endblock %}
+{% block topbar_title %}Portal Access Readiness{% endblock %}
+{% block topbar_subtitle %}Check whether client portal credentials are available before GST, Income Tax, MCA, TRACES, PF/ESI, and accounting automation.{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-start justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1"><i class="bi bi-shield-check text-primary me-2"></i>Portal Access Readiness</h3>
+    <p class="page-subtle mb-0">Check whether client portal credentials are available before GST, Income Tax, MCA, TRACES, PF/ESI, and accounting automation.</p>
+  </div>
+</div>
+
+<div class="alert alert-warning rounded-3" role="alert">
+  <i class="bi bi-shield-lock me-1"></i>
+  Passwords are never shown to AI or included in AI prompts. This page only checks readiness.
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Total Clients</div>
+      <div class="fs-3 fw-bold">{{ summary.total_clients }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Ready</div>
+      <div class="fs-3 fw-bold text-success">{{ summary.ready_clients }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Partial</div>
+      <div class="fs-3 fw-bold text-warning">{{ summary.partial_clients }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Needs Attention</div>
+      <div class="fs-3 fw-bold text-danger">{{ summary.attention_clients }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">Not Ready</div>
+      <div class="fs-3 fw-bold">{{ summary.not_ready_clients }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="card h-100 text-center py-3">
+      <div class="small text-muted">OTP Required</div>
+      <div class="fs-3 fw-bold">{{ summary.otp_required_count }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <form method="GET" action="{{ url_for('portal_readiness_page') }}" class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label small text-muted mb-1">Search Client</label>
+        <input type="text" class="form-control form-control-sm" name="search" value="{{ selected.search }}" placeholder="name, PAN, GSTIN">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small text-muted mb-1">Portal</label>
+        <select class="form-select form-select-sm" name="portal_type">
+          <option value="">All</option>
+          {% for portal_key, portal_label in portal_columns.items() %}
+          <option value="{{ portal_key }}" {% if selected.portal_type == portal_key %}selected{% endif %}>{{ portal_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small text-muted mb-1">Status</label>
+        <select class="form-select form-select-sm" name="status">
+          <option value="">All</option>
+          {% for status in status_options %}
+          <option value="{{ status }}" {% if selected.status == status %}selected{% endif %}>{{ status|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-2 d-flex gap-1">
+        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        <a href="{{ url_for('portal_readiness_page') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold py-2">Clients Needing Attention</div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle small">
+      <thead class="table-light">
+        <tr>
+          <th>Client</th>
+          <th>Issue</th>
+          <th>Portal</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in clients_needing_attention %}
+        <tr>
+          <td>{{ item.client_name }}</td>
+          <td>{{ item.issue }}</td>
+          <td>{{ item.portal_name }}</td>
+          <td><span class="status-badge">{{ item.status|replace('_', ' ')|title }}</span></td>
+          <td>
+            {% if item.credential_id %}
+            <a href="{{ url_for('credential_detail', credential_id=item.credential_id) }}" class="btn btn-outline-primary btn-sm">View</a>
+            {% else %}
+            <a href="{{ url_for('credentials_page') }}" class="btn btn-outline-secondary btn-sm">Add</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-4">No attention items right now.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold">Client Readiness Matrix</span>
+    <span class="badge bg-secondary">{{ rows|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle small">
+      <thead class="table-light">
+        <tr>
+          <th>Client</th>
+          <th>PAN</th>
+          <th>GSTIN</th>
+          <th>Overall</th>
+          {% for portal_key, portal_label in portal_columns.items() %}
+          <th>{{ portal_label }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ row.client_name }}</div>
+            <div class="text-muted" style="font-size:.78rem;">
+              Ready: {{ row.ready_count }} | Partial: {{ row.partial_count }} | Attention: {{ row.attention_count }}
+            </div>
+          </td>
+          <td>{{ row.pan or '-' }}</td>
+          <td>{{ row.gstin or '-' }}</td>
+          <td><span class="status-badge">{{ row.overall_status|replace('_', ' ')|title }}</span></td>
+          {% for portal_key, portal_label in portal_columns.items() %}
+          {% set portal = row.portals[portal_key] %}
+          <td>
+            {% if portal.credential_id %}
+            <a href="{{ url_for('credential_detail', credential_id=portal.credential_id) }}" class="status-badge text-decoration-none">
+              {{ portal.status|replace('_', ' ')|title }}
+            </a>
+            {% else %}
+            <span class="status-badge">{{ portal.status|replace('_', ' ')|title }}</span>
+            <a href="{{ url_for('credentials_page') }}" class="d-block small mt-1">Add</a>
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="14" class="text-center text-muted py-4">No clients found for the selected filters.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header fw-semibold py-2">Legend</div>
+  <div class="card-body small">
+    <span class="status-badge me-2">Ready</span> Username + secret available and usable for current phase.
+    <br>
+    <span class="status-badge me-2">Partial</span> Credential exists but key readiness fields are incomplete.
+    <br>
+    <span class="status-badge me-2">Missing</span> No credential record found for this portal.
+    <br>
+    <span class="status-badge me-2">Expired / Locked / Error / Disabled</span> Credential needs manual action before use.
+  </div>
+</div>
+{% endblock %}

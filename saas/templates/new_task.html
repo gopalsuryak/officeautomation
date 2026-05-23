@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}New Task — CA Assist{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="{{ url_for('dashboard') }}" class="text-muted small text-decoration-none">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+  <h4 class="fw-bold mt-2 mb-0">Create a New Task</h4>
+  <p class="text-muted small">Select what you need help with — fill in 2-3 fields and done.</p>
+</div>
+
+<form method="POST" action="{{ url_for('legacy_new_task') }}" id="taskForm">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+  <!-- Step 1: Task type selection (big cards) -->
+  <div class="card mb-4">
+    <div class="card-header bg-white py-3 px-4 border-bottom">
+      <span class="fw-bold">Step 1 — What do you need?</span>
+    </div>
+    <div class="card-body p-3">
+      <div class="row g-2">
+
+        <!-- GST -->
+        <div class="col-12"><p class="text-muted small fw-semibold mb-1 mt-2 ps-1">GST Returns</p></div>
+        {% for val, label, icon in [
+          ('gstr1',   'GSTR-1 (Outward Supplies)',  'bi-file-earmark-text'),
+          ('gstr3b',  'GSTR-3B (Monthly Summary)',  'bi-file-earmark-check'),
+          ('gstr9',   'GSTR-9 (Annual Return)',     'bi-file-earmark-ruled'),
+        ] %}
+        <div class="col-md-4">
+          <label class="task-type-card card p-3 h-100 {% if loop.first %}selected{% endif %}"
+                 style="cursor:pointer; border:2px solid transparent;"
+                 data-value="{{ val }}">
+            <input type="radio" name="task_type" value="{{ val }}" class="d-none"
+                   {% if loop.first %}checked{% endif %}/>
+            <i class="bi {{ icon }} text-success fs-4 mb-1"></i>
+            <div class="fw-semibold small">{{ label }}</div>
+          </label>
+        </div>
+        {% endfor %}
+
+        <!-- TDS / Income Tax -->
+        <div class="col-12"><p class="text-muted small fw-semibold mb-1 mt-3 ps-1">TDS &amp; Income Tax</p></div>
+        {% for val, label, icon in [
+          ('tds_return',  'TDS Return (26Q / 24Q)',       'bi-receipt'),
+          ('tds_cert',    'TDS Certificate (Form 16/16A)', 'bi-award'),
+          ('itr',         'ITR Filing',                   'bi-person-vcard'),
+          ('advance_tax', 'Advance Tax Calculation',      'bi-calculator'),
+        ] %}
+        <div class="col-md-3">
+          <label class="task-type-card card p-3 h-100"
+                 style="cursor:pointer; border:2px solid transparent;"
+                 data-value="{{ val }}">
+            <input type="radio" name="task_type" value="{{ val }}" class="d-none"/>
+            <i class="bi {{ icon }} text-primary fs-4 mb-1"></i>
+            <div class="fw-semibold small">{{ label }}</div>
+          </label>
+        </div>
+        {% endfor %}
+
+        <!-- ROC / MCA -->
+        <div class="col-12"><p class="text-muted small fw-semibold mb-1 mt-3 ps-1">ROC / MCA (Company Filing)</p></div>
+        {% for val, label, icon in [
+          ('aoc4',    'AOC-4 (Annual Accounts)',   'bi-building'),
+          ('mgt7',    'MGT-7 (Annual Return)',     'bi-clipboard-data'),
+          ('dir3kyc', 'DIR-3 KYC (Director)',      'bi-person-badge'),
+        ] %}
+        <div class="col-md-4">
+          <label class="task-type-card card p-3 h-100"
+                 style="cursor:pointer; border:2px solid transparent;"
+                 data-value="{{ val }}">
+            <input type="radio" name="task_type" value="{{ val }}" class="d-none"/>
+            <i class="bi {{ icon }} text-warning fs-4 mb-1"></i>
+            <div class="fw-semibold small">{{ label }}</div>
+          </label>
+        </div>
+        {% endfor %}
+
+        <!-- Payroll + Other -->
+        <div class="col-12"><p class="text-muted small fw-semibold mb-1 mt-3 ps-1">Payroll &amp; Other</p></div>
+        {% for val, label, icon in [
+          ('pf_esi',    'PF / ESI Return',             'bi-people'),
+          ('due_dates', 'Upcoming Due Dates',           'bi-calendar-check'),
+          ('query',     'General Query / Other',        'bi-chat-dots'),
+        ] %}
+        <div class="col-md-4">
+          <label class="task-type-card card p-3 h-100"
+                 style="cursor:pointer; border:2px solid transparent;"
+                 data-value="{{ val }}">
+            <input type="radio" name="task_type" value="{{ val }}" class="d-none"/>
+            <i class="bi {{ icon }} text-danger fs-4 mb-1"></i>
+            <div class="fw-semibold small">{{ label }}</div>
+          </label>
+        </div>
+        {% endfor %}
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Details -->
+  <div class="card mb-4">
+    <div class="card-header bg-white py-3 px-4 border-bottom">
+      <span class="fw-bold">Step 2 — Fill in the details</span>
+    </div>
+    <div class="card-body p-4">
+      <div class="row g-3">
+
+        <div class="col-md-6" id="client-field">
+          <label class="form-label fw-semibold">Client Name</label>
+          <input type="text" name="client_name" class="form-control form-control-lg"
+                 placeholder="e.g. ABC Pvt Ltd"/>
+          <div class="form-text">The company or individual you are filing for.</div>
+        </div>
+
+        <div class="col-md-6" id="period-field">
+          <label class="form-label fw-semibold">Period</label>
+          <input type="text" name="period" class="form-control form-control-lg"
+                 placeholder="e.g. May 2026 or FY 2025-26"/>
+          <div class="form-text">Month, quarter, or financial year.</div>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label fw-semibold" id="extra-label">
+            Additional Details <span class="text-muted fw-normal">(optional)</span>
+          </label>
+          <textarea name="extra_details" class="form-control" rows="4"
+                    id="extra-input"
+                    placeholder="Any extra information — turnover, income figures, notes…"></textarea>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="d-grid">
+    <button type="submit" class="btn btn-primary btn-lg py-3">
+      <i class="bi bi-send-fill me-2"></i>Send to Agent
+    </button>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Highlight selected task type card
+  document.querySelectorAll(".task-type-card").forEach(function(card) {
+    card.addEventListener("click", function() {
+      document.querySelectorAll(".task-type-card").forEach(c => {
+        c.style.borderColor = "transparent";
+        c.style.background  = "";
+      });
+      card.style.borderColor = "#1a56db";
+      card.style.background  = "#eff6ff";
+      card.querySelector("input").checked = true;
+
+      // Adjust placeholder for "query" type
+      var val = card.dataset.value;
+      var extraInput = document.getElementById("extra-input");
+      var extraLabel = document.getElementById("extra-label");
+      if (val === "query") {
+        extraInput.placeholder = "Type your question here…";
+        extraLabel.firstChild.textContent = "Your Question ";
+        document.getElementById("client-field").style.display = "none";
+        document.getElementById("period-field").style.display = "none";
+      } else if (val === "due_dates") {
+        document.getElementById("client-field").style.display = "none";
+        document.getElementById("period-field").style.display = "none";
+        extraInput.placeholder = "Any specific area? (e.g. GST only, or all compliance)";
+        extraLabel.firstChild.textContent = "Filter (optional) ";
+      } else {
+        document.getElementById("client-field").style.display = "";
+        document.getElementById("period-field").style.display = "";
+        extraInput.placeholder = "Any extra information — turnover, income figures, notes…";
+        extraLabel.firstChild.textContent = "Additional Details ";
+      }
+    });
+  });
+
+  // Highlight first card on load
+  var first = document.querySelector(".task-type-card");
+  if (first) { first.style.borderColor = "#1a56db"; first.style.background = "#eff6ff"; }
+</script>
+{% endblock %}

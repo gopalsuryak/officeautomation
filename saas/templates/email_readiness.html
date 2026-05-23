@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Email Readiness Checklist - CA Assist{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+      <h1 class="mb-1">Email Readiness Checklist</h1>
+      <p class="text-muted mb-0">Internal checklist before using SMTP email sending for clients.</p>
+    </div>
+  </div>
+
+  <div class="alert alert-info mb-4">
+    <strong>Safety note:</strong> This checklist does not send emails. It only tracks internal readiness.
+  </div>
+
+  <div class="row g-2 mb-4">
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Total Checks</div><div class="h4 mb-0">{{ readiness.total_checks }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Completed</div><div class="h4 mb-0 text-success">{{ readiness.completed_count }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Pending</div><div class="h4 mb-0 text-warning">{{ readiness.pending_count }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Blocked</div><div class="h4 mb-0 text-danger">{{ readiness.blocked_count }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Required Completed</div><div class="h4 mb-0 text-primary">{{ readiness.required_completed_count }} / {{ readiness.required_total_count }}</div></div></div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100"><div class="card-body text-center"><div class="text-muted small">Ready for Client Use</div><div class="h4 mb-0 {% if readiness.is_ready_for_client_use %}text-success{% else %}text-danger{% endif %}">{% if readiness.is_ready_for_client_use %}Yes{% else %}No{% endif %}</div></div></div>
+    </div>
+  </div>
+
+  {% if readiness.is_ready_for_client_use %}
+  <div class="alert alert-success mb-4">
+    <strong>Email module is marked ready for controlled client testing.</strong>
+  </div>
+  {% else %}
+  <div class="alert alert-danger mb-4">
+    <strong>Do not use client emails until required checks are complete.</strong>
+  </div>
+  {% endif %}
+
+  <div class="card mb-2">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Check</th>
+            <th>Description</th>
+            <th>Required</th>
+            <th>Status</th>
+            <th>Notes</th>
+            <th>Completed At</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for check in readiness.checks %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ check.title }}</div>
+              <small class="text-muted"><code>{{ check.check_key }}</code></small>
+            </td>
+            <td>{{ check.description }}</td>
+            <td>
+              {% if check.required_before_client_use %}
+              <span class="badge bg-primary">Required</span>
+              {% else %}
+              <span class="badge bg-secondary">Optional</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if check.status == 'completed' %}
+              <span class="badge bg-success">completed</span>
+              {% elif check.status == 'blocked' %}
+              <span class="badge bg-danger">blocked</span>
+              {% elif check.status == 'not_applicable' %}
+              <span class="badge bg-secondary">not_applicable</span>
+              {% else %}
+              <span class="badge bg-warning text-dark">pending</span>
+              {% endif %}
+            </td>
+            <td style="min-width: 260px;">
+              <select name="status" form="readiness-form-{{ check.check_key }}" class="form-select form-select-sm mb-2" required>
+                <option value="pending" {% if check.status == 'pending' %}selected{% endif %}>pending</option>
+                <option value="completed" {% if check.status == 'completed' %}selected{% endif %}>completed</option>
+                <option value="blocked" {% if check.status == 'blocked' %}selected{% endif %}>blocked</option>
+                <option value="not_applicable" {% if check.status == 'not_applicable' %}selected{% endif %}>not_applicable</option>
+              </select>
+              <textarea name="notes" form="readiness-form-{{ check.check_key }}" rows="2" class="form-control form-control-sm" placeholder="Internal notes">{{ check.notes or '' }}</textarea>
+            </td>
+            <td><small class="text-muted">{{ check.completed_at or '—' }}</small></td>
+            <td>
+              <form id="readiness-form-{{ check.check_key }}" method="post" action="{{ url_for('email_readiness_update', check_key=check.check_key) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+              </form>
+              <button type="submit" form="readiness-form-{{ check.check_key }}" class="btn btn-sm btn-outline-primary">Update</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

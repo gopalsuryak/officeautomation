@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Email Dry Run Preview — CA Assist{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h1 class="mb-0">Email Dry Run Payload Preview</h1>
+    <div class="btn-group">
+      <a href="{{ url_for('email_queue_detail', queue_id=preview.queue_id) }}" class="btn btn-outline-secondary btn-sm">Back to Queue Item</a>
+      <a href="{{ url_for('email_queue_list') }}" class="btn btn-outline-secondary btn-sm">Email Queue</a>
+    </div>
+  </div>
+
+  <div class="alert alert-info mb-3">
+    <strong>Dry Run Only:</strong> This is a local payload preview snapshot. No SMTP/Gmail/Zoho request was made and no email was sent.
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h5 class="card-title">Preview Metadata</h5>
+      <dl class="row mb-0">
+        <dt class="col-sm-3">Preview ID</dt>
+        <dd class="col-sm-9">#{{ preview.id }}</dd>
+
+        <dt class="col-sm-3">Queue Item</dt>
+        <dd class="col-sm-9">#{{ preview.queue_id }}</dd>
+
+        <dt class="col-sm-3">Queue Status</dt>
+        <dd class="col-sm-9">{{ preview.queue_status or '—' }}</dd>
+
+        <dt class="col-sm-3">Client</dt>
+        <dd class="col-sm-9">{{ preview.client_name or '—' }}</dd>
+
+        <dt class="col-sm-3">Task</dt>
+        <dd class="col-sm-9">{{ preview.task_title or '—' }}</dd>
+
+        <dt class="col-sm-3">Provider</dt>
+        <dd class="col-sm-9">{{ preview.provider_display_name or '—' }}{% if preview.provider_type %} ({{ preview.provider_type|upper }}){% endif %}</dd>
+
+        <dt class="col-sm-3">Created At</dt>
+        <dd class="col-sm-9">{{ preview.created_at or '—' }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>Validation Result</strong>
+      {% if preview.validation.get('status') == 'ready' %}
+      <span class="badge bg-success">Ready</span>
+      {% else %}
+      <span class="badge bg-warning text-dark">Incomplete</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if preview.validation.get('missing_fields') %}
+      <div class="alert alert-warning mb-2">
+        Missing required fields: {{ preview.validation.get('missing_fields')|join(', ') }}
+      </div>
+      {% else %}
+      <div class="alert alert-success mb-2">All required fields are present.</div>
+      {% endif %}
+      <small class="text-muted">Required checks: from_email, to_email, subject, body.</small>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><strong>Approve for Future Sending</strong></div>
+    <div class="card-body">
+      {% if preview.approval_status == 'approved' %}
+      <div class="alert alert-primary mb-2">
+        Approved for future sending worker.
+      </div>
+      <dl class="row mb-0">
+        <dt class="col-sm-3">Approval Status</dt>
+        <dd class="col-sm-9">{{ preview.approval_status }}</dd>
+
+        <dt class="col-sm-3">Approved At</dt>
+        <dd class="col-sm-9">{{ preview.approved_at or '—' }}</dd>
+
+        <dt class="col-sm-3">Approval Note</dt>
+        <dd class="col-sm-9">{{ preview.approval_note or '—' }}</dd>
+      </dl>
+      {% elif preview.validation.get('status') == 'ready' and preview.queue_status == 'ready_to_send' %}
+      <p class="text-muted">This does not send the email. It only marks the queued email as approved for a future sending worker.</p>
+      <form method="post" action="{{ url_for('approve_email_dry_run', preview_id=preview.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="mb-3">
+          <label class="form-label">Approval Note</label>
+          <textarea name="approval_note" rows="3" class="form-control" placeholder="Optional approval note"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Approve for Future Sending</button>
+      </form>
+      {% else %}
+      <div class="alert alert-secondary mb-0">
+        Approval is available only when validation is ready and queue status is ready_to_send.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h5 class="card-title">Payload</h5>
+      <div class="mb-2">
+        <label class="form-label fw-semibold">From</label>
+        <input type="text" class="form-control" value="{{ (preview.from_name ~ ' <' ~ preview.from_email ~ '>') if preview.from_name and preview.from_email else (preview.from_email or '—') }}" readonly>
+      </div>
+      <div class="mb-2">
+        <label class="form-label fw-semibold">To</label>
+        <input type="text" class="form-control" value="{{ preview.to_email or '—' }}" readonly>
+      </div>
+      <div class="mb-2">
+        <label class="form-label fw-semibold">CC</label>
+        <input type="text" class="form-control" value="{{ preview.cc_email or '—' }}" readonly>
+      </div>
+      <div class="mb-2">
+        <label class="form-label fw-semibold">BCC</label>
+        <input type="text" class="form-control" value="{{ preview.bcc_email or '—' }}" readonly>
+      </div>
+      <div class="mb-2">
+        <label class="form-label fw-semibold">Subject</label>
+        <input type="text" class="form-control" value="{{ preview.subject or '—' }}" readonly>
+      </div>
+      <div>
+        <label class="form-label fw-semibold">Body</label>
+        <textarea class="form-control" rows="12" readonly>{{ preview.body or '' }}</textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert alert-secondary small mb-0">
+    Dry-run preview does not trigger sending. Queue sent_at remains unchanged until a future governed dispatch phase is implemented.
+  </div>
+</div>
+{% endblock %}

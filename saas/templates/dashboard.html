@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — CA Assist{% endblock %}
+{% block topbar_title %}Compliance Control Room{% endblock %}
+{% block topbar_subtitle %}Operational overview of tasks, AI drafts, documents, and review workload{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h3 class="fw-bold mb-1">Compliance Control Room</h3>
+    <p class="page-subtle mb-0">Track client-wise pending work, AI drafts, document requests, and review status.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('new_task') }}" class="btn btn-primary">
+      <i class="bi bi-plus-circle me-1"></i>New Task
+    </a>
+    <a href="{{ url_for('clients_new') }}" class="btn btn-outline-primary">
+      <i class="bi bi-person-plus me-1"></i>Add Client
+    </a>
+  </div>
+</div>
+
+{% if not tenant or tenant.status == 'pending_payment' %}
+<div class="card p-4 text-center border border-warning border-2">
+  <i class="bi bi-exclamation-triangle-fill text-warning fs-2 mb-2"></i>
+  <h5 class="fw-bold">Payment Pending</h5>
+  <p class="text-muted">Complete your subscription to start using the agent.</p>
+  <a href="{{ url_for('checkout', plan=tenant.plan if tenant else 'starter') }}"
+     class="btn btn-warning fw-bold">Complete Payment</a>
+</div>
+
+{% elif tenant.status == 'provisioning_failed' %}
+<div class="card p-4 text-center border border-danger border-2">
+  <i class="bi bi-x-circle-fill text-danger fs-2 mb-2"></i>
+  <h5 class="fw-bold">Setup in Progress</h5>
+  <p class="text-muted">Your account is being set up. This usually takes under a minute. Please refresh the page.</p>
+  <button onclick="location.reload()" class="btn btn-outline-secondary">Refresh</button>
+</div>
+
+{% else %}
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Active Clients</div><div class="kpi-value">{{ summary.active_clients }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Open Tasks</div><div class="kpi-value" style="color:var(--info);">{{ summary.open_tasks }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Overdue</div><div class="kpi-value" style="color:var(--danger);">{{ summary.overdue_tasks }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Due This Week</div><div class="kpi-value" style="color:var(--warning);">{{ summary.due_this_week }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Pending Documents</div><div class="kpi-value" style="color:var(--warning);">{{ summary.pending_documents_tasks }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Awaiting Review</div><div class="kpi-value">{{ summary.awaiting_review }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Changes Required</div><div class="kpi-value" style="color:var(--warning);">{{ summary.changes_required }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">AI Processing</div><div class="kpi-value" style="color:var(--info);">{{ summary.ai_queued_or_processing }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">High Risk AI</div><div class="kpi-value" style="color:var(--danger);">{{ summary.high_risk_ai_outputs }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Pending Doc Requests</div><div class="kpi-value">{{ summary.pending_document_requests }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Filed This Month</div><div class="kpi-value" style="color:var(--success);">{{ summary.filed_this_month }}</div></div>
+  </div>
+  <div class="col-lg-2 col-md-3 col-6">
+    <div class="kpi-card"><div class="kpi-label">Closed This Month</div><div class="kpi-value" style="color:var(--success);">{{ summary.closed_this_month }}</div></div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header bg-white"><h6 class="fw-bold mb-0">Urgent Work</h6></div>
+  <div class="card-body">
+    <div class="row g-4">
+      <div class="col-lg-6">
+        <h6 class="fw-semibold mb-2 text-danger">Overdue Tasks</h6>
+        {% if overdue_tasks %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr><th>Client</th><th>Task</th><th>Period</th><th>Due Date</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for task in overdue_tasks %}
+                <tr>
+                  <td class="small">{{ task.client_name }}</td>
+                  <td class="small">{{ task.title }}</td>
+                  <td class="small text-muted">{{ task.period or '-' }}</td>
+                  <td class="small text-danger">{{ task.due_date or '-' }}</td>
+                  <td class="small"><span class="status-badge status-{{ task.status }}">{{ task.status|replace('_', ' ')|title }}</span></td>
+                  <td><a class="btn btn-outline-primary btn-sm" href="{{ url_for('task_detail', task_id=task.id) }}">View</a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state"><div class="small text-muted">No overdue tasks.</div></div>
+        {% endif %}
+      </div>
+      <div class="col-lg-6">
+        <h6 class="fw-semibold mb-2 text-warning">Due Soon Tasks</h6>
+        {% if due_soon_tasks %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr><th>Client</th><th>Task</th><th>Period</th><th>Due Date</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for task in due_soon_tasks %}
+                <tr>
+                  <td class="small">{{ task.client_name }}</td>
+                  <td class="small">{{ task.title }}</td>
+                  <td class="small text-muted">{{ task.period or '-' }}</td>
+                  <td class="small">{{ task.due_date or '-' }}</td>
+                  <td class="small"><span class="status-badge status-{{ task.status }}">{{ task.status|replace('_', ' ')|title }}</span></td>
+                  <td><a class="btn btn-outline-primary btn-sm" href="{{ url_for('task_detail', task_id=task.id) }}">View</a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state"><div class="small text-muted">No tasks due in the next 7 days.</div></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header bg-white"><h6 class="fw-bold mb-0">Review & AI</h6></div>
+  <div class="card-body">
+    <div class="row g-4">
+      <div class="col-lg-6">
+        <h6 class="fw-semibold mb-2">Awaiting Review</h6>
+        {% if awaiting_review_tasks %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr><th>Client</th><th>Task</th><th>Confidence</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for task in awaiting_review_tasks %}
+                <tr>
+                  <td class="small">{{ task.client_name }}</td>
+                  <td class="small">{{ task.title }}</td>
+                  <td class="small">{{ task.confidence|title if task.confidence else '-' }}</td>
+                  <td><a class="btn btn-outline-primary btn-sm" href="{{ url_for('task_detail', task_id=task.id) }}">View</a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state"><div class="small text-muted">No tasks awaiting review.</div></div>
+        {% endif %}
+      </div>
+      <div class="col-lg-6">
+        <h6 class="fw-semibold mb-2">Recent AI Drafts</h6>
+        {% if recent_ai_outputs %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr><th>Client</th><th>Task</th><th>Confidence</th><th>Status Recommendation</th><th>Risk Flags</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for ai in recent_ai_outputs %}
+                <tr>
+                  <td class="small">{{ ai.client_name }}</td>
+                  <td class="small">{{ ai.title }}</td>
+                  <td class="small">{{ ai.confidence|title if ai.confidence else '-' }}</td>
+                  <td class="small">{{ ai.status_recommendation|replace('_', ' ')|title if ai.status_recommendation else '-' }}</td>
+                  <td class="small">{{ ai.risk_flags_count }}</td>
+                  <td><a class="btn btn-outline-primary btn-sm" href="{{ url_for('task_detail', task_id=ai.task_id) }}">View</a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state"><div class="small text-muted">No recent AI drafts.</div></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header bg-white"><h6 class="fw-bold mb-0">Documents</h6></div>
+  <div class="card-body">
+    {% if pending_document_tasks %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>Client</th><th>Task</th><th>Requested Docs Count</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for task in pending_document_tasks %}
+            <tr>
+              <td class="small">{{ task.client_name }}</td>
+              <td class="small">{{ task.title }}</td>
+              <td class="small">{{ task.requested_docs_count }}</td>
+              <td class="small">{{ task.status|replace('_', ' ')|title }}</td>
+              <td><a class="btn btn-outline-primary btn-sm" href="{{ url_for('task_detail', task_id=task.id) }}">View</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state"><div class="small text-muted">No tasks pending documents.</div></div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header bg-white"><h6 class="fw-bold mb-0">Client-wise Pending Summary</h6></div>
+  <div class="card-body">
+    {% if client_pending_summary %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>Client</th><th>Open Tasks</th><th>Overdue</th><th>Pending Docs</th><th>Awaiting Review</th><th>Next Due Date</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for row in client_pending_summary %}
+            <tr>
+              <td class="small">{{ row.client_name }}</td>
+              <td class="small">{{ row.open_tasks }}</td>
+              <td class="small text-danger">{{ row.overdue_tasks }}</td>
+              <td class="small">{{ row.pending_documents }}</td>
+              <td class="small">{{ row.awaiting_review }}</td>
+              <td class="small">{{ row.next_due_date or '-' }}</td>
+              <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('clients_detail', client_id=row.client_entity_id) }}">View</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state"><div class="small text-muted">No client summary available yet.</div></div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header bg-white"><h6 class="fw-bold mb-0">Recent Activity</h6></div>
+  <div class="card-body">
+    {% if recent_activity %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>Time</th><th>Action</th><th>Entity</th><th>User</th></tr>
+          </thead>
+          <tbody>
+            {% for a in recent_activity %}
+            <tr>
+              <td class="small">{{ a.created_at[:16] if a.created_at else '-' }}</td>
+              <td class="small">{{ a.action|replace('_', ' ')|title }}</td>
+              <td class="small">{{ (a.entity_type or '-') ~ (': ' ~ a.entity_id if a.entity_id else '') }}</td>
+              <td class="small">{{ a.user_id or '-' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state"><div class="small text-muted">No recent activity.</div></div>
+    {% endif %}
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}

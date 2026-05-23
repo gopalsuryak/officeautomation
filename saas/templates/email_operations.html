@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% block title %}Email Operations Control Room - CA Assist{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+      <h1 class="mb-1">Email Operations Control Room</h1>
+      <p class="text-muted mb-0">Monitor draft-to-queue readiness with provider assignment and internal statuses.</p>
+    </div>
+  </div>
+
+  <div class="alert alert-info mb-4">
+    <strong>Safety:</strong> No emails are sent from this dashboard. This control room tracks internal readiness only.
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><strong>Filters</strong></div>
+    <div class="card-body">
+      <form method="get" action="{{ url_for('email_operations_page') }}" class="row g-2">
+        <div class="col-lg-3 col-md-6">
+          <label class="form-label small mb-1">Search</label>
+          <input type="text" class="form-control form-control-sm" name="search" value="{{ filters.get('search', '') }}" placeholder="Client, task, subject, body, email, provider">
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+          <label class="form-label small mb-1">Client</label>
+          <select class="form-select form-select-sm" name="client_entity_id">
+            <option value="">All clients</option>
+            {% for client in clients %}
+            <option value="{{ client.id }}" {% if filters.get('client_entity_id') and (filters.get('client_entity_id')|string == client.id|string) %}selected{% endif %}>{{ client.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+          <label class="form-label small mb-1">Task</label>
+          <select class="form-select form-select-sm" name="task_id">
+            <option value="">All tasks</option>
+            {% for task in tasks %}
+            <option value="{{ task.id }}" {% if filters.get('task_id') and (filters.get('task_id')|string == task.id|string) %}selected{% endif %}>#{{ task.id }} - {{ task.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+          <label class="form-label small mb-1">Provider</label>
+          <select class="form-select form-select-sm" name="provider_id">
+            <option value="">All providers</option>
+            {% for provider in providers %}
+            <option value="{{ provider.id }}" {% if filters.get('provider_id') and (filters.get('provider_id')|string == provider.id|string) %}selected{% endif %}>{{ provider.display_name }} ({{ provider.provider_type|upper }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-lg-2 col-md-4">
+          <label class="form-label small mb-1">Queue Status</label>
+          <select class="form-select form-select-sm" name="queue_status">
+            <option value="">All queue statuses</option>
+            {% for status in ['queued', 'ready_to_send', 'sent', 'failed', 'cancelled'] %}
+            <option value="{{ status }}" {% if filters.get('queue_status') == status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-lg-2 col-md-4">
+          <label class="form-label small mb-1">Draft Status</label>
+          <select class="form-select form-select-sm" name="draft_status">
+            <option value="">All draft statuses</option>
+            {% for status in ['draft', 'reviewed', 'archived'] %}
+            <option value="{{ status }}" {% if filters.get('draft_status') == status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-lg-2 col-md-4">
+          <label class="form-label small mb-1">Date From</label>
+          <input type="date" class="form-control form-control-sm" name="date_from" value="{{ filters.get('date_from', '') }}">
+        </div>
+
+        <div class="col-lg-2 col-md-4">
+          <label class="form-label small mb-1">Date To</label>
+          <input type="date" class="form-control form-control-sm" name="date_to" value="{{ filters.get('date_to', '') }}">
+        </div>
+
+        <div class="col-lg-4 col-md-8 d-flex align-items-end gap-2">
+          <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+          <a href="{{ url_for('email_operations_page') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if has_active_filters %}
+  <div class="alert alert-secondary py-2 mb-4">
+    Filters applied. Results are restricted to selected criteria.
+  </div>
+  {% endif %}
+
+  <div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Drafts Awaiting Review</div>
+          <div class="h3 mb-0">{{ summary.get('drafts_awaiting_review', 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Reviewed Not Queued</div>
+          <div class="h3 mb-0">{{ summary.get('reviewed_not_queued', 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Queued Without Provider</div>
+          <div class="h3 mb-0 text-warning">{{ summary.get('queued_without_provider', 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Queued With Provider</div>
+          <div class="h3 mb-0 text-primary">{{ summary.get('queued_with_provider', 0) }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Ready To Send</div>
+          <div class="h3 mb-0 text-info">{{ summary.get('ready_to_send', 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Cancelled / Failed</div>
+          <div class="h3 mb-0 text-secondary">{{ summary.get('cancelled_failed', 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Active Providers</div>
+          <div class="h3 mb-0 text-success">{{ summary.get('active_providers', 0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Providers Failing Readiness</div>
+          <div class="h3 mb-0 text-danger">{{ summary.get('providers_failing_readiness', 0) }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body py-2">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="small text-muted">Quick links:</span>
+        <a href="{{ url_for('email_queue_list') }}" class="btn btn-sm btn-outline-primary">Email Queue</a>
+        <a href="{{ url_for('email_provider_settings_page') }}" class="btn btn-sm btn-outline-primary">Email Providers</a>
+        <a href="{{ url_for('document_communications_register') }}" class="btn btn-sm btn-outline-primary">Communication Drafts</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Drafts Awaiting Review</strong></div>
+    {% if drafts_awaiting_review %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Created</th>
+            <th>Client</th>
+            <th>Task</th>
+            <th>Subject</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in drafts_awaiting_review %}
+          <tr>
+            <td><small class="text-muted">{{ item.created_at[:16] if item.created_at else '—' }}</small></td>
+            <td>{{ item.client_name or '—' }}</td>
+            <td>{{ item.task_title or '—' }}</td>
+            <td>{{ item.subject or '(No subject)' }}</td>
+            <td><a href="{{ url_for('document_communication_draft_detail', draft_id=item.draft_id) }}" class="btn btn-sm btn-outline-secondary">Open</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No drafts awaiting review.</div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Reviewed Drafts Not Queued</strong></div>
+    {% if reviewed_not_queued %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Reviewed</th>
+            <th>Client</th>
+            <th>Task</th>
+            <th>Subject</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in reviewed_not_queued %}
+          <tr>
+            <td><small class="text-muted">{{ item.reviewed_at[:16] if item.reviewed_at else '—' }}</small></td>
+            <td>{{ item.client_name or '—' }}</td>
+            <td>{{ item.task_title or '—' }}</td>
+            <td>{{ item.subject or '(No subject)' }}</td>
+            <td><a href="{{ url_for('document_communication_draft_detail', draft_id=item.draft_id) }}" class="btn btn-sm btn-outline-secondary">Open</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No reviewed drafts waiting for queueing.</div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Queue Items Without Provider</strong></div>
+    {% if queue_without_provider %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Queued</th>
+            <th>Client</th>
+            <th>Task</th>
+            <th>To</th>
+            <th>Subject</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in queue_without_provider %}
+          <tr>
+            <td><small class="text-muted">{{ item.queued_at[:16] if item.queued_at else '—' }}</small></td>
+            <td>{{ item.client_name or '—' }}</td>
+            <td>{{ item.task_title or '—' }}</td>
+            <td>{{ item.to_email or '—' }}</td>
+            <td>{{ item.subject or '(No subject)' }}</td>
+            <td><a href="{{ url_for('email_queue_detail', queue_id=item.queue_id) }}" class="btn btn-sm btn-outline-secondary">Open</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No queued items missing provider assignment.</div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>Ready To Send Items (Internal Only)</strong></div>
+    {% if ready_to_send_items %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Updated</th>
+            <th>Client</th>
+            <th>Task</th>
+            <th>To</th>
+            <th>Provider</th>
+            <th>Readiness</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in ready_to_send_items %}
+          <tr>
+            <td><small class="text-muted">{{ item.queued_at[:16] if item.queued_at else '—' }}</small></td>
+            <td>{{ item.client_name or '—' }}</td>
+            <td>{{ item.task_title or '—' }}</td>
+            <td>{{ item.to_email or '—' }}</td>
+            <td>{{ item.provider_display_name or item.provider_type or '—' }}</td>
+            <td>{{ item.provider_last_check_status or '—' }}</td>
+            <td><a href="{{ url_for('email_queue_detail', queue_id=item.queue_id) }}" class="btn btn-sm btn-outline-secondary">Open</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No ready_to_send queue items.</div>
+    {% endif %}
+  </div>
+
+  <div class="card mb-2">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>Provider Readiness</strong>
+      <span class="badge bg-light text-dark border">
+        Active: {{ provider_readiness.get('active_providers', 0) }} | Incomplete: {{ provider_readiness.get('providers_failing_readiness', 0) }}
+      </span>
+    </div>
+    {% if provider_readiness.get('providers') %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Provider</th>
+            <th>Type</th>
+            <th>From</th>
+            <th>Status</th>
+            <th>Default</th>
+            <th>Last Check</th>
+            <th>Error</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for provider in provider_readiness.get('providers', []) %}
+          <tr>
+            <td>{{ provider.display_name or '—' }}</td>
+            <td>{{ provider.provider_type|upper if provider.provider_type else '—' }}</td>
+            <td>{{ provider.from_email or '—' }}</td>
+            <td>{{ provider.status or '—' }}</td>
+            <td>{% if provider.is_default %}<span class="badge bg-primary">Default</span>{% else %}<span class="text-muted small">No</span>{% endif %}</td>
+            <td>{{ provider.last_check_status or '—' }}</td>
+            <td><small class="text-muted">{{ provider.last_error or '—' }}</small></td>
+            <td><a href="{{ url_for('email_provider_setting_detail', provider_id=provider.provider_id) }}" class="btn btn-sm btn-outline-secondary">Open</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">No provider records found.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

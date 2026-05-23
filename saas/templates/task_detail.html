@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}{{ task.title }} — CA Assist{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <a href="{{ url_for('dashboard') }}" class="text-muted small text-decoration-none">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+
+{% set status = task.get('status', 'open') %}
+
+<!-- Task header card -->
+<div class="card mb-4">
+  <div class="card-body px-4 py-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <h5 class="fw-bold mb-0">{{ task.title }}</h5>
+      <div>
+        {% if status in ['done', 'closed'] %}
+          <span class="status-pill-done fs-6"><i class="bi bi-check-circle-fill me-1"></i>Done</span>
+        {% elif status == 'blocked' %}
+          <span class="status-pill-blocked fs-6"><i class="bi bi-info-circle-fill me-1"></i>More Info Needed</span>
+        {% else %}
+          <span class="status-pill-open fs-6"><i class="bi bi-hourglass-split me-1"></i>Agent is Working…</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if task.get('description') %}
+    <hr class="my-3"/>
+    <p class="text-muted mb-0" style="white-space:pre-wrap;">{{ task.description }}</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Agent reply -->
+{% if status in ['done', 'closed', 'blocked'] %}
+  {% set agent_comments = comments | selectattr('author', 'ne', None) | list %}
+  {% if agent_comments %}
+  <div class="card mb-4 border-0" style="background:#f0fdf4;">
+    <div class="card-body px-4 py-4">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="badge bg-success rounded-pill px-3 py-2">
+          <i class="bi bi-robot me-1"></i>Agent Reply
+        </span>
+      </div>
+      {% for comment in agent_comments %}
+      <div class="mb-3" style="white-space:pre-wrap; line-height:1.7;">{{ comment.body }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+{% elif status == 'blocked' %}
+  <div class="card mb-4 border border-warning">
+    <div class="card-body px-4 py-3">
+      <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+      <strong>The agent needs more information.</strong>
+      <p class="text-muted mb-0 mt-1 small">
+        Please create a new task with the additional details requested above.
+      </p>
+    </div>
+  </div>
+
+{% else %}
+  <!-- Still processing -->
+  <div class="card mb-4 border-0 text-center" style="background:#fefce8;">
+    <div class="card-body py-5">
+      <div class="spinner-border text-warning mb-3" role="status"></div>
+      <h6 class="fw-bold">The agent is working on this…</h6>
+      <p class="text-muted small mb-0">This usually takes 1–3 minutes. This page will refresh automatically.</p>
+    </div>
+  </div>
+{% endif %}
+
+<!-- All comments thread -->
+{% if comments %}
+<div class="card">
+  <div class="card-header bg-white border-bottom py-3 px-4">
+    <h6 class="fw-bold mb-0">Full Thread</h6>
+  </div>
+  <div class="list-group list-group-flush">
+    {% for comment in comments %}
+    <div class="list-group-item px-4 py-3">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <i class="bi bi-person-circle text-muted"></i>
+        <span class="fw-semibold small">{{ comment.get('author', {}).get('name', 'Agent') }}</span>
+        <span class="text-muted small">·</span>
+        <span class="text-muted small">{{ comment.get('createdAt', '')[:16] | replace('T', ' ') }}</span>
+      </div>
+      <div style="white-space:pre-wrap; line-height:1.6;">{{ comment.body }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Action buttons -->
+<div class="d-flex gap-2 mt-4">
+  <a href="{{ url_for('legacy_new_task') }}" class="btn btn-primary">
+    <i class="bi bi-plus-circle me-1"></i>New Task
+  </a>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+    Back to Dashboard
+  </a>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{% set status = task.get('status', 'open') %}
+{% if status not in ['done', 'closed', 'blocked'] %}
+<script>
+  // Auto-refresh every 20 seconds while agent is working
+  setTimeout(function() { location.reload(); }, 20000);
+</script>
+{% endif %}
+{% endblock %}
