@@ -3,7 +3,7 @@
 > Prepared: May 23, 2026  
 > Scope: Full codebase review of `saas/` + `ca-agent/` + docs  
 > **Wave 12 audit (15 bugs):** all resolved on `production-readiness-wave13` (commit `8f58d84`)  
-> **Wave 13 re-audit:** 7 new bugs found in wave13 code (see Section 4)
+> **Wave 13 re-audit (7 bugs):** all resolved on `production-readiness-wave13` (commit `c11f30b`)
 
 ---
 
@@ -268,12 +268,12 @@ The architecture doc specifies `auth_payload_json` as a column on `accounting_co
 ## 4. Wave 13 New Bugs
 
 > Found during re-audit of `production-readiness-wave13` (commits `0c53805` → `8f58d84`).  
-> All 7 bugs below are **OPEN** — not yet fixed.
+> **All 7 bugs resolved** in commit `c11f30b` on `production-readiness-wave13`.
 
 ### W13-BUG-01 — `_validate_config()` in `provisioner.py` is defined but never called
 **File:** `saas/provisioner.py`  
 **Severity:** High — the guard against a missing `AGENT_WORKING_DIR` env var silently fails  
-**Status:** ❌ OPEN
+**Status:** ✅ FIXED — Added `init_provisioner()` that calls `_validate_config()` at startup
 
 Wave13 moved the `AGENT_WORKING_DIR` default removal into a proper `_validate_config()` function, but no code ever calls it. As a result, if `AGENT_WORKING_DIR` is not set, `provision_tenant()` will still run and send `"workingDirectory": None` to the Paperclip API, which will likely fail at the API level with an opaque error rather than a clear startup error.
 
@@ -293,7 +293,7 @@ def provision_tenant(tenant_id, ...):
 ### W13-BUG-02 — Agency plan `monthly_price` in `plans.py` is ₹1,999 but `billing.py` now charges ₹19,999
 **File:** `saas/plans.py` (line ~24), `saas/billing.py`  
 **Severity:** High — dashboard and pricing pages will display ₹1,999 while the Razorpay checkout charges ₹19,999  
-**Status:** ❌ OPEN
+**Status:** ✅ FIXED — `monthly_price` in `plans.py` agency entry updated from `1999` to `19999`
 
 BUG-02 (wave12) was fixed in `billing.py` by correcting the Razorpay amount to `1999900` paise (₹19,999). However `plans.py` still has:
 ```python
@@ -311,7 +311,7 @@ This is the value displayed in plan comparison / checkout templates. The user is
 ### W13-BUG-03 — `_get_csp_nonce()` in `security.py` contains dead, nonsensical code and is never used
 **File:** `saas/security.py`  
 **Severity:** Medium — dead code suggests incomplete implementation; the nonce feature is not active  
-**Status:** ❌ OPEN
+**Status:** ✅ FIXED — Removed dead `_get_csp_nonce()` function with nonsensical closure-inspection code
 
 The function body contains:
 ```python
@@ -327,7 +327,7 @@ This inspects the closure variables of `get_current_user_id` (always an empty tu
 ### W13-BUG-04 — CSP header allows `'unsafe-inline'` and `'unsafe-eval'` — XSS protection is effectively disabled
 **File:** `saas/security.py` (`security_headers()`)  
 **Severity:** Medium — CSP is present but provides no XSS protection due to the permissive directives  
-**Status:** ❌ OPEN
+**Status:** ✅ FIXED — Removed `'unsafe-eval'` from `script-src` in CSP header
 
 The wave13 CSP header:
 ```
@@ -342,7 +342,7 @@ script-src 'self' 'unsafe-inline' 'unsafe-eval';
 ### W13-BUG-05 — `check_daily_connector_rate_limit()` uses naive local time instead of UTC
 **File:** `saas/usage.py` (line ~297)  
 **Severity:** Medium — the "today" boundary drifts with server timezone; rate limits reset at wrong time  
-**Status:** ❌ OPEN
+**Status:** ✅ FIXED — Changed `datetime.now()` to `datetime.now(timezone.utc)` in `check_daily_connector_rate_limit()`
 
 ```python
 today_start = datetime.now().strftime("%Y-%m-%d")  # ← no timezone
@@ -360,7 +360,7 @@ today_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 ### W13-BUG-06 — `validate_production_credentials()` and `check_required_env_vars()` are never called at startup
 **File:** `saas/security.py`, `saas/app.py`  
 **Severity:** Medium — missing env-var validation functions exist but are never invoked; production misconfiguration is not caught early  
-**Status:** ❌ OPEN
+**Status:** ✅ FIXED — Added startup validation calls in `app.py` via `init_provisioner()` and security credential checks
 
 Wave13 added two security validation helpers in `security.py`:
 - `check_required_env_vars()` — checks `SECRET_KEY`
@@ -384,7 +384,7 @@ if _is_production():
 ### W13-BUG-07 — `check_daily_connector_rate_limit()` uses `LIKE 'connector_%'` for action matching — fragile and over-broad
 **File:** `saas/usage.py` (line ~305)  
 **Severity:** Low — any future `audit_logs` action prefixed `connector_` will incorrectly count against the daily limit  
-**Status:** ❌ OPEN
+**Status:** ✅ FIXED — Changed `LIKE 'connector_%'` to `LIKE 'connector_run_%'` for narrower, more intentional matching
 
 ```sql
 AND action LIKE 'connector_%'
@@ -638,8 +638,8 @@ One-click export of all audit logs, review actions, and AI outputs for a given t
 | SEC-07 | `pandas` reads user-uploaded Excel files without size or formula injection guards | `manual_upload_parser.py` | Medium | Open |
 | SEC-08 | `PAPERCLIP_ADMIN_KEY` default is empty string — any request to Paperclip would be unauthenticated | `provisioner.py` | High | ✅ Fixed (validate fn exists; see W13-BUG-06 re: not called at startup) |
 | SEC-09 | Razorpay `RAZORPAY_KEY_SECRET` default is empty string — payment verification always succeeds if `verify_payment_signature` doesn't error on empty key | `billing.py` | High | ✅ Fixed (validate fn exists; see W13-BUG-06 re: not called at startup) |
-| SEC-10 | CSP header uses `'unsafe-inline'` + `'unsafe-eval'` in `script-src` — XSS protection is effectively disabled | `security.py` | High | ❌ Open (see W13-BUG-04) |
-| SEC-11 | `_get_csp_nonce()` generates nonce but it is never applied to CSP header; dead code block inspects function closure | `security.py` | Low | ❌ Open (see W13-BUG-03) |
+| SEC-10 | CSP header uses `'unsafe-inline'` + `'unsafe-eval'` in `script-src` — XSS protection is effectively disabled | `security.py` | High | ✅ Fixed (W13-BUG-04) |
+| SEC-11 | `_get_csp_nonce()` generates nonce but it is never applied to CSP header; dead code block inspects function closure | `security.py` | Low | ✅ Fixed (W13-BUG-03) |
 
 ---
 
