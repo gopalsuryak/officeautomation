@@ -196,7 +196,7 @@ def _protect_unsafe_requests():
 	if request.is_json:
 		return jsonify({"ok": False, "error": message}), 400
 	flash(message, "warning")
-	return redirect(request.referrer or url_for("dashboard"))
+	return redirect(request.referrer or url_for("desk_app"))
 
 
 def _tenant_id_or_none():
@@ -346,10 +346,11 @@ def _task_ai_payload(task, tenant_id):
 	}
 
 
-@app.get("/")
+@app.get("/home")
 def home():
+	"""Marketing landing page — logged-in users are redirected to desk."""
 	if security.get_current_user_id():
-		return redirect(url_for("dashboard"))
+		return redirect(url_for("desk_app"))
 	return render_template("index.html", plans=billing.PLANS)
 
 
@@ -410,7 +411,7 @@ def signup():
 
 	if tenant_status == "pending_payment":
 		return redirect(url_for("checkout", plan=plan_key))
-	return redirect(url_for("dashboard"))
+	return redirect(url_for("desk_app"))
 
 
 _DEV_LOGINS = [] if _is_production() else [
@@ -436,7 +437,7 @@ def login():
 	session["user_id"] = user["id"]
 	session.permanent = True
 	flash("Logged in successfully.", "success")
-	return redirect(url_for("dashboard"))
+	return redirect(url_for("desk_app"))
 
 
 @app.get("/logout")
@@ -461,7 +462,7 @@ def checkout():
 		order = billing.create_order(plan_key)
 	except Exception as exc:  # noqa: BLE001
 		flash(f"Could not initialize payment: {exc}", "warning")
-		return redirect(url_for("dashboard"))
+		return redirect(url_for("desk_app"))
 
 	return render_template(
 		"checkout.html",
@@ -514,7 +515,7 @@ def billing_verify():
 			ip_address=security.get_request_ip() or "",
 		)
 
-	return jsonify({"ok": True, "redirect": url_for("dashboard")})
+	return jsonify({"ok": True, "redirect": url_for("desk_app")})
 
 
 @app.get("/dashboard")
@@ -2729,8 +2730,8 @@ app.add_url_rule("/tasks/new", endpoint="legacy_new_task", view_func=new_task, m
 def _not_found(_error):
 	if security.get_current_user_id():
 		flash("Page not found.", "warning")
-		return redirect(url_for("dashboard"))
-	return redirect(url_for("home"))
+		return redirect(url_for("desk_app"))
+	return redirect(url_for("login"))
 
 
 @app.errorhandler(ValueError)
@@ -2739,7 +2740,7 @@ def _value_error(error):
     import logging
     logging.warning(f"Validation error: {error}")
     flash("Invalid input. Please check your data and try again.", "warning")
-    return redirect(request.referrer or url_for("dashboard")), 400
+    return redirect(request.referrer or url_for("desk_app")), 400
 
 
 @app.errorhandler(sqlite3.OperationalError)
@@ -2748,7 +2749,7 @@ def _db_error(error):
     import logging
     logging.exception("Database error occurred")
     flash("A database error occurred. Please try again or contact support.", "danger")
-    return redirect(request.referrer or url_for("dashboard")), 500
+    return redirect(request.referrer or url_for("desk_app")), 500
 
 
 @app.errorhandler(Exception)
@@ -2757,7 +2758,7 @@ def _catch_all(error):
     import logging
     logging.exception("Unhandled exception occurred")
     flash("An unexpected error occurred. Please try again or contact support.", "danger")
-    return redirect(request.referrer or url_for("dashboard")), 500
+    return redirect(request.referrer or url_for("desk_app")), 500
 
 
 # ============================================================
@@ -4072,13 +4073,16 @@ def api_approval_reject(task_id):
 	return jsonify({"ok": True, "task_id": task_id, "new_status": "Cancelled"})
 
 
-# ── Serve the built React desk app ───────────────────────────────────────
+# ── Serve the built React desk app (main UI) ─────────────────────────────
+# The React SPA is the primary interface. It is served at both / and /desk.
+# All Jinja2 routes remain accessible at their existing paths.
 
+@app.route("/")
 @app.route("/desk")
 @app.route("/desk/")
 @login_required
 def desk_app():
-	"""Serve the CA Office Desk React SPA (built via Vite into static/desk/)."""
+	"""Serve the CA Office Desk React SPA (primary UI at / and /desk)."""
 	return send_from_directory("static/desk", "index.html")
 
 
