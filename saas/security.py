@@ -5,6 +5,16 @@ from flask import flash, redirect, request, session, url_for
 
 import db
 
+# Role hierarchy — higher index = higher privilege.
+# owner is handled separately (always True).
+_ROLE_RANK = {
+    "viewer":    0,
+    "assistant": 1,
+    "senior":    2,
+    "manager":   3,
+    "partner":   4,
+}
+
 
 def get_current_user_id():
     return session.get("user_id")
@@ -51,7 +61,13 @@ def has_role(required_roles):
     else:
         allowed_roles = {str(role).strip().lower() for role in (required_roles or [])}
 
-    return current_role in allowed_roles
+    # Also grant access if the user's rank is >= any allowed role's rank.
+    current_rank = _ROLE_RANK.get(current_role, -1)
+    for role in allowed_roles:
+        if current_rank >= _ROLE_RANK.get(role, 999):
+            return True
+
+    return False
 
 
 def require_roles(required_roles):

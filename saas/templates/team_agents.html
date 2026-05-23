@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Agents — CA Assist{% endblock %}
+{% block topbar_title %}Agent Roster{% endblock %}
+{% block topbar_subtitle %}All available agents and their capabilities{% endblock %}
+
+{% block content %}
+
+{# Stats row #}
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-lg-3">
+    <div class="kpi-card">
+      <div class="kpi-label">Total Agents</div>
+      <div class="kpi-value" style="color:var(--agent);">{{ agents|length }}</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="kpi-card">
+      <div class="kpi-label">Categories</div>
+      <div class="kpi-value">{{ categories|length }}</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="kpi-card">
+      <div class="kpi-label">Active Automations</div>
+      <div class="kpi-value" style="color:var(--success);">{{ active_count }}</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="kpi-card">
+      <div class="kpi-label">Require Human Review</div>
+      <div class="kpi-value">{{ review_count }}</div>
+    </div>
+  </div>
+</div>
+
+{# Agent cards #}
+<div class="row g-3">
+  {% for agent in agents %}
+  <div class="col-sm-6 col-lg-4">
+    <div class="card h-100 p-3" style="border-left: 3px solid var(--agent);">
+      <div class="d-flex align-items-start gap-3 mb-2">
+        <div class="position-relative">
+          <span class="avatar-agent lg">{{ agent.initials }}</span>
+          <span class="presence-dot available position-absolute" style="bottom:1px;right:1px;border-color:#fff;"></span>
+        </div>
+        <div class="flex-grow-1">
+          <h6 class="mb-0 fw-bold" style="color:var(--agent);">◆ {{ agent.name }}</h6>
+          <span class="meta-chip mt-1 d-inline-block">{{ agent.category }}</span>
+        </div>
+        <a href="{{ url_for('team_agent_profile', slug=agent.slug) }}" class="btn btn-sm btn-outline-secondary">View</a>
+      </div>
+
+      <p class="text-muted mb-2" style="font-size:.82rem;">{{ agent.sample_description }}</p>
+
+      <div class="d-flex flex-wrap gap-1 mb-2">
+        {% for skill in agent.skills[:4] %}
+        <span class="skill-chip">{{ skill }}</span>
+        {% endfor %}
+        {% if agent.skills|length > 4 %}
+        <span class="skill-chip" style="background:var(--surface-alt);color:var(--muted);border-color:var(--border);">+{{ agent.skills|length - 4 }}</span>
+        {% endif %}
+      </div>
+
+      <div class="d-flex gap-3 mt-auto pt-2" style="font-size:.75rem;color:var(--muted);border-top:1px solid var(--border);">
+        <span>
+          <i class="bi bi-shield-check me-1" style="color:{{ 'var(--warning)' if agent.requires_review else 'var(--success)' }};"></i>
+          {{ 'Review required' if agent.requires_review else 'Can auto-release' }}
+        </span>
+        <span>
+          <i class="bi bi-activity me-1"></i>{{ agent.automation_count }} automations
+        </span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if not agents %}
+<div class="empty-state mt-3">
+  <i class="bi bi-cpu" style="font-size:2rem;color:var(--faint);display:block;margin-bottom:.75rem;"></i>
+  <h5 style="color:var(--muted);">No agents found</h5>
+  <p class="text-muted">Agents are configured in the Automation Registry.</p>
+  <a href="{{ url_for('automation_registry_page') }}" class="btn btn-outline-primary btn-sm">Open Registry</a>
+</div>
+{% endif %}
+
+{% endblock %}

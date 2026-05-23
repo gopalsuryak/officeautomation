@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Inbox — CA Assist{% endblock %}
+{% block topbar_title %}Inbox{% endblock %}
+{% block topbar_subtitle %}What needs you today{% endblock %}
+
+{% block content %}
+<div class="d-flex" style="min-height: calc(100vh - 72px); margin: -1.1rem -1.25rem;">
+
+  {# ── Left rail ── #}
+  <div class="inbox-rail d-flex flex-column">
+
+    {# Releases waiting #}
+    {% if releases %}
+    <div class="inbox-section-label">
+      <i class="bi bi-lock me-1"></i>Releases waiting ({{ releases|length }})
+    </div>
+    {% for w in releases %}
+    <a href="{{ url_for('work_detail', work_id=w.id) }}" class="inbox-item {{ 'active' if selected_id == w.id else '' }}">
+      <span class="avatar-agent" title="Agent: {{ w.agent_key or 'unknown' }}">{{ (w.agent_key or 'AI')[0:2]|upper }}</span>
+      <div class="flex-grow-1 overflow-hidden">
+        <p class="inbox-item-title">{{ w.title }}</p>
+        <div class="inbox-item-meta">
+          {% if w.client_name %}<span class="me-1">{{ w.client_name }}</span>·{% endif %}
+          <span class="ms-1 status-badge status-{{ w.status }}">{{ w.status|replace('_',' ')|title }}</span>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+    {% endif %}
+
+    {# Assigned to me #}
+    {% if assigned %}
+    <div class="inbox-section-label">
+      <i class="bi bi-person me-1"></i>Assigned to me ({{ assigned|length }})
+    </div>
+    {% for w in assigned %}
+    <a href="{{ url_for('work_detail', work_id=w.id) }}" class="inbox-item {{ 'active' if selected_id == w.id else '' }}">
+      <span class="avatar-human">{{ (w.title or 'W')[0:2]|upper }}</span>
+      <div class="flex-grow-1 overflow-hidden">
+        <p class="inbox-item-title">{{ w.title }}</p>
+        <div class="inbox-item-meta">
+          {% if w.client_name %}<span class="me-1">{{ w.client_name }}</span>·{% endif %}
+          {% if w.due_date %}<span class="ms-1">Due {{ w.due_date }}</span>{% endif %}
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+    {% endif %}
+
+    {% if not releases and not assigned %}
+    <div class="text-center p-4" style="color:var(--faint);">
+      <i class="bi bi-check2-circle" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
+      All clear — nothing needs you right now.
+    </div>
+    {% endif %}
+
+  </div>
+
+  {# ── Right pane — selected work or welcome ── #}
+  <div class="flex-grow-1 p-4">
+    {% if selected %}
+      <h5 class="fw-bold mb-1">{{ selected.title }}</h5>
+      <p class="text-muted mb-3" style="font-size:.85rem;">
+        <span class="status-badge status-{{ selected.status }}">{{ selected.status|replace('_',' ')|title }}</span>
+        {% if selected.client_name %} · {{ selected.client_name }}{% endif %}
+        {% if selected.due_date %} · Due {{ selected.due_date }}{% endif %}
+      </p>
+
+      {# Authorization surface #}
+      {% if selected.status == 'proposed' %}
+      <div class="release-panel mb-3">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="avatar-agent">{{ (selected.agent_key or 'AI')[0:2]|upper }}</span>
+          <div>
+            <span class="fw-semibold" style="color:var(--agent);">Agent proposal ready</span>
+            {% if selected.agent_confidence %}
+            <span class="ms-2 text-muted" style="font-size:.8rem;">Confidence {{ (selected.agent_confidence * 100)|round|int }}%</span>
+            {% endif %}
+          </div>
+        </div>
+        <p class="mb-3" style="font-size:.875rem;">Review the proposal in the Work detail before releasing.</p>
+        <div class="d-flex gap-2 flex-wrap">
+          <a href="{{ url_for('work_detail', work_id=selected.id) }}" class="btn btn-sm btn-success">
+            <i class="bi bi-check2 me-1"></i>Open &amp; Release
+          </a>
+          <a href="{{ url_for('work_detail', work_id=selected.id) }}" class="btn btn-sm btn-outline-secondary">View Detail</a>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Thread preview #}
+      {% if events %}
+      <div class="card">
+        <div class="card-header py-2"><span class="fw-semibold" style="font-size:.85rem;">Thread</span></div>
+        <div class="card-body p-3" style="max-height:420px;overflow-y:auto;">
+          {% for ev in events %}
+          {% if ev.event_kind == 'system' %}
+          <div class="thread-event system">
+            <i class="bi bi-dot"></i>
+            <span>{{ ev.body }}</span>
+            <span class="ms-auto" style="white-space:nowrap;">{{ ev.created_at[:16] }}</span>
+          </div>
+          {% else %}
+          <div class="thread-event">
+            {% if ev.actor_kind == 'agent' %}
+            <span class="avatar-agent" title="{{ ev.agent_key }}">{{ (ev.agent_key or 'AI')[0:2]|upper }}</span>
+            {% else %}
+            <span class="avatar-human">{{ (ev.actor_name or 'U')[0:2]|upper }}</span>
+            {% endif %}
+            <div class="thread-comment flex-grow-1">
+              <div class="d-flex justify-content-between mb-1">
+                <span class="fw-semibold" style="font-size:.8rem;">
+                  {% if ev.actor_kind == 'agent' %}◆ {{ ev.agent_key }}{% else %}{{ ev.actor_name or 'Staff' }}{% endif %}
+                </span>
+                <span style="font-size:.75rem;color:var(--faint);">{{ ev.created_at[:16] }}</span>
+              </div>
+              <p class="mb-0" style="font-size:.875rem;">{{ ev.body }}</p>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    {% else %}
+    <div class="text-center mt-5" style="color:var(--faint);">
+      <i class="bi bi-inbox-fill" style="font-size:3rem;display:block;margin-bottom:1rem;"></i>
+      <h5 style="color:var(--muted);">Select an item from the left</h5>
+      <p>Your releases, assigned work, and mentions appear here.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

@@ -979,6 +979,73 @@ def init_db():
         if "provider_message_id" not in wa_queue_columns:
             conn.execute("ALTER TABLE whatsapp_send_queue ADD COLUMN provider_message_id TEXT")
 
+        # ── Wave 15: Works + Work Events (Human+Agent Workspace) ──────────
+        # Unified Work object: replaces the conceptual fragmentation of tasks,
+        # email_queue items, document drafts, GST review packs as separate surfaces.
+        # Works are additive — existing tables are untouched; this is a new top-level
+        # entity that can optionally link to an existing compliance_task.
+        #
+        # doer_kind: 'person' | 'agent'
+        # status: new | in_progress | proposed | in_review | changes_requested |
+        #         released | filed | rejected
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS works (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id           INTEGER NOT NULL REFERENCES tenants(id),
+                client_entity_id    INTEGER REFERENCES client_entities(id),
+                linked_task_id      INTEGER REFERENCES compliance_tasks(id),
+                kind                TEXT NOT NULL DEFAULT 'task',
+                title               TEXT NOT NULL,
+                description         TEXT,
+                status              TEXT NOT NULL DEFAULT 'new',
+                priority            TEXT NOT NULL DEFAULT 'normal',
+                due_date            TEXT,
+                doer_kind           TEXT NOT NULL DEFAULT 'person',
+                doer_id             INTEGER,
+                authorizer_user_id  INTEGER REFERENCES users(id),
+                agent_key           TEXT,
+                agent_confidence    REAL,
+                outcome_kind        TEXT,
+                outcome_ref         TEXT,
+                created_by          INTEGER REFERENCES users(id),
+                created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_works_tenant_status
+                ON works(tenant_id, status);
+            CREATE INDEX IF NOT EXISTS idx_works_tenant_doer
+                ON works(tenant_id, doer_kind, doer_id);
+            CREATE INDEX IF NOT EXISTS idx_works_tenant_authorizer
+                ON works(tenant_id, authorizer_user_id);
+            CREATE INDEX IF NOT EXISTS idx_works_tenant_client_due
+                ON works(tenant_id, client_entity_id, due_date);
+        """)
+
+        # work_events — the unified thread: system events, comments, agent runs,
+        # outcome records.  Immutable rows — never updated.
+        # event_kind: system | comment | agent_run | outcome | escalation
+        # actor_kind: person | agent | system
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS work_events (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id     INTEGER NOT NULL REFERENCES tenants(id),
+                work_id       INTEGER NOT NULL REFERENCES works(id),
+                event_kind    TEXT NOT NULL DEFAULT 'comment',
+                actor_kind    TEXT NOT NULL DEFAULT 'person',
+                actor_id      INTEGER,
+                agent_key     TEXT,
+                body          TEXT,
+                metadata_json TEXT,
+                created_at    TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_work_events_tenant_work_created
+                ON work_events(tenant_id, work_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_work_events_tenant_actor
+                ON work_events(tenant_id, actor_kind, actor_id);
+        """)
+
 
 # ---------------------------------------------------------------------------
 # Helper functions

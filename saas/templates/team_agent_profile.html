@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }} — CA Assist{% endblock %}
+{% block topbar_title %}◆ {{ agent.name }}{% endblock %}
+{% block topbar_subtitle %}Agent Profile · {{ agent.category }}{% endblock %}
+
+{% block content %}
+<div class="d-flex gap-2 align-items-center mb-3">
+  <a href="{{ url_for('team_agents_page') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>All Agents
+  </a>
+</div>
+
+<div class="row g-3">
+
+  {# ── Profile card ── #}
+  <div class="col-lg-4">
+    <div class="card p-4 mb-3" style="border-left: 3px solid var(--agent);">
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <div class="position-relative">
+          <span class="avatar-agent lg">{{ agent.initials }}</span>
+          <span class="presence-dot available position-absolute" style="bottom:2px;right:2px;border-color:#fff;"></span>
+        </div>
+        <div>
+          <h5 class="mb-0 fw-bold" style="color:var(--agent);">◆ {{ agent.name }}</h5>
+          <span class="text-muted" style="font-size:.85rem;">{{ agent.category }}</span>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="presence-dot available"></span>
+        <span style="font-size:.82rem;color:var(--success);">Available · Always on · Rate limited</span>
+      </div>
+
+      <div class="mb-3">
+        <div class="text-muted mb-1" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Skills</div>
+        <div class="d-flex flex-wrap gap-1">
+          {% for skill in agent.skills %}
+          <span class="skill-chip">{{ skill }}</span>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <div class="text-muted mb-1" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Authorization Required</div>
+        <div class="d-flex align-items-center gap-2">
+          {% if agent.requires_review %}
+          <i class="bi bi-shield-exclamation" style="color:var(--warning);"></i>
+          <span style="font-size:.875rem;">Human review required before release</span>
+          {% else %}
+          <i class="bi bi-shield-check" style="color:var(--success);"></i>
+          <span style="font-size:.875rem;">Can release automatically (low-risk tasks)</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div>
+        <div class="text-muted mb-1" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Cost per Work</div>
+        <span style="font-size:.875rem;">Varies by LLM tokens · tracked per Work item</span>
+      </div>
+    </div>
+
+    {# Disable/Enable — owner only #}
+    {% if current_role == 'owner' %}
+    <div class="card p-3">
+      <h6 class="fw-semibold mb-2" style="font-size:.85rem;">Availability Control</h6>
+      <p class="text-muted mb-2" style="font-size:.8rem;">Disable this agent to stop new assignments firm-wide. In-progress work will complete.</p>
+      <button class="btn btn-sm btn-outline-danger w-100" disabled title="Kill switch — coming soon">
+        <i class="bi bi-power me-1"></i>Disable Agent
+      </button>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Automations table ── #}
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold" style="font-size:.85rem;">Automations ({{ automations|length }})</span>
+        <span class="text-muted" style="font-size:.78rem;">{{ active_automations }} active</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Category</th>
+              <th>Risk</th>
+              <th>Output</th>
+              <th>Review</th>
+              <th>Active</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in automations %}
+            <tr>
+              <td>
+                <div class="fw-medium" style="font-size:.875rem;">{{ a.name }}</div>
+                <div class="text-muted" style="font-size:.78rem;">{{ a.description[:80] }}{% if a.description|length > 80 %}…{% endif %}</div>
+              </td>
+              <td><span class="meta-chip">{{ a.category }}</span></td>
+              <td>
+                <span class="status-badge {% if a.risk_level == 'high' %}status-ai_failed{% elif a.risk_level == 'medium' %}status-ai_queued{% else %}status-new{% endif %}">
+                  {{ a.risk_level|title }}
+                </span>
+              </td>
+              <td><span style="font-size:.8rem;color:var(--muted);">{{ (a.output_type or '—')|replace('_',' ')|title }}</span></td>
+              <td>
+                {% if a.requires_human_review %}
+                <i class="bi bi-check2-circle text-success"></i>
+                {% else %}
+                <i class="bi bi-dash text-muted"></i>
+                {% endif %}
+              </td>
+              <td>
+                {% if a.is_active %}
+                <span class="presence-dot available d-inline-block me-1"></span><span style="font-size:.8rem;color:var(--success);">Yes</span>
+                {% else %}
+                <span class="presence-dot offline d-inline-block me-1"></span><span style="font-size:.8rem;color:var(--muted);">No</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# Performance placeholder #}
+    <div class="card p-4">
+      <h6 class="fw-semibold mb-3" style="font-size:.85rem;">Performance (last 90 days)</h6>
+      <div class="row g-3 text-center">
+        <div class="col-4">
+          <div class="kpi-label">Acceptance Rate</div>
+          <div class="kpi-value" style="color:var(--success);">—</div>
+        </div>
+        <div class="col-4">
+          <div class="kpi-label">Rework Rate</div>
+          <div class="kpi-value" style="color:var(--warning);">—</div>
+        </div>
+        <div class="col-4">
+          <div class="kpi-label">Avg Time to Proposal</div>
+          <div class="kpi-value">—</div>
+        </div>
+      </div>
+      <p class="text-muted mb-0 mt-3" style="font-size:.8rem;">Performance metrics populate once Works are tracked through the new Work object.</p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

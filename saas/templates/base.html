@@ -4,37 +4,66 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>{% block title %}CA Assist{% endblock %}</title>
-  <!-- B-02 fix: CSRF token available to all JS via meta tag -->
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
   <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet"/>
 </head>
 <body>
-{% set on_dashboard = request.endpoint == 'dashboard' %}
-{% set on_clients = request.endpoint in ['clients_list', 'clients_new', 'clients_detail', 'clients_edit'] %}
-{% set on_tasks = request.endpoint in ['tasks_list', 'new_task', 'task_detail', 'task_edit', 'task_status', 'task_comments', 'task_add_document_request', 'task_sync_ai', 'task_send_to_ai', 'task_review_action'] %}
-{% set on_ai_automation = request.endpoint in ['automation_center', 'automation_retry_ai', 'automation_sync_ai'] %}
-{% set on_registry = request.endpoint == 'automation_registry_page' %}
-{% set on_credentials = request.endpoint in ['credentials_page', 'credentials_new', 'credential_detail', 'credential_status_update', 'credential_verify_manual', 'credential_check_readiness'] %}
-{% set on_portal_readiness = request.endpoint == 'portal_readiness_page' %}
-{% set on_accounting_connectors = request.endpoint in ['accounting_connectors_page', 'accounting_connectors_new', 'accounting_connection_detail', 'accounting_connection_status_update'] %}
-{% set on_accounting_data = request.endpoint in ['accounting_data_page', 'accounting_ledger_detail'] %}
+{# ── Nav active-state detection ── #}
+{% set on_inbox      = request.endpoint in ['inbox_page'] %}
+{% set on_work       = request.endpoint in ['work_list', 'work_detail'] %}
+{% set on_clients    = request.endpoint in ['clients_list', 'clients_new', 'clients_detail', 'clients_edit'] %}
+{% set on_ledger     = request.endpoint in ['audit_logs', 'email_delivery_logs_page'] %}
+{% set on_team       = request.endpoint in ['team_agents_page', 'team_agent_profile'] %}
+{% set on_settings   = request.endpoint in ['usage_page', 'credentials_page', 'credential_detail',
+                         'credential_status_update', 'credential_verify_manual', 'credential_check_readiness',
+                         'email_provider_settings_page', 'email_provider_settings_new',
+                         'email_provider_setting_detail', 'email_provider_setting_status_update',
+                         'email_provider_setting_set_default', 'email_provider_setting_check',
+                         'accounting_connectors_page', 'accounting_connectors_new',
+                         'accounting_connection_detail', 'accounting_connection_status_update'] %}
+{# Legacy sections that are sub-destinations, not top nav #}
+{% set on_dashboard  = request.endpoint == 'dashboard' %}
+{% set on_tasks      = request.endpoint in ['tasks_list', 'new_task', 'task_detail', 'task_edit',
+                         'task_status', 'task_comments', 'task_add_document_request',
+                         'task_sync_ai', 'task_send_to_ai', 'task_review_action'] %}
+{% set on_ai_automation      = request.endpoint in ['automation_center', 'automation_retry_ai', 'automation_sync_ai'] %}
+{% set on_registry           = request.endpoint == 'automation_registry_page' %}
+{% set on_credentials        = request.endpoint in ['credentials_page', 'credential_detail',
+                                 'credential_status_update', 'credential_verify_manual', 'credential_check_readiness'] %}
+{% set on_portal_readiness   = request.endpoint == 'portal_readiness_page' %}
+{% set on_accounting_connectors = request.endpoint in ['accounting_connectors_page', 'accounting_connectors_new',
+                                    'accounting_connection_detail', 'accounting_connection_status_update'] %}
+{% set on_accounting_data    = request.endpoint in ['accounting_data_page', 'accounting_ledger_detail'] %}
 {% set on_gst_reconciliation = request.endpoint in ['gst_reconciliation_page', 'gst_reconciliation_run', 'gst_reconciliation_detail'] %}
-{% set on_gst_dashboard = request.endpoint == 'gst_dashboard_page' %}
-{% set on_voice_assistant = request.endpoint in ['voice_assistant_page', 'voice_assistant_parse', 'voice_assistant_execute'] %}
-{% set on_document_communications = request.endpoint in ['document_communications_register', 'document_communication_draft_detail', 'document_communication_draft_print', 'document_communication_draft_download', 'mark_document_communication_draft_reviewed', 'archive_document_communication_draft'] %}
-{% set on_email_queue = request.endpoint in ['email_queue_list', 'email_queue_detail', 'update_email_queue_status', 'queue_email_from_draft', 'assign_email_queue_provider', 'mark_email_queue_ready_with_provider', 'add_email_queue_failure_review', 'reopen_email_queue_after_failure'] %}
+{% set on_gst_dashboard      = request.endpoint == 'gst_dashboard_page' %}
+{% set on_gstr3b_review_packs = request.endpoint in ['gstr3b_review_packs_list', 'gstr3b_review_pack_detail'] %}
+{% set on_voice_assistant    = request.endpoint in ['voice_assistant_page', 'voice_assistant_parse', 'voice_assistant_execute'] %}
+{% set on_document_communications = request.endpoint in ['document_communications_register',
+                                      'document_communication_draft_detail', 'document_communication_draft_print',
+                                      'document_communication_draft_download', 'mark_document_communication_draft_reviewed',
+                                      'archive_document_communication_draft'] %}
+{% set on_email_queue        = request.endpoint in ['email_queue_list', 'email_queue_detail', 'update_email_queue_status',
+                                 'queue_email_from_draft', 'assign_email_queue_provider',
+                                 'mark_email_queue_ready_with_provider', 'add_email_queue_failure_review',
+                                 'reopen_email_queue_after_failure'] %}
 {% set on_email_delivery_logs = request.endpoint == 'email_delivery_logs_page' %}
-{% set on_email_providers = request.endpoint in ['email_provider_settings_page', 'email_provider_settings_new', 'email_provider_setting_detail', 'email_provider_setting_status_update', 'email_provider_setting_set_default', 'email_provider_setting_check'] %}
-{% set on_email_operations = request.endpoint == 'email_operations_page' %}
+{% set on_email_providers    = request.endpoint in ['email_provider_settings_page', 'email_provider_settings_new',
+                                 'email_provider_setting_detail', 'email_provider_setting_status_update',
+                                 'email_provider_setting_set_default', 'email_provider_setting_check'] %}
+{% set on_email_operations   = request.endpoint == 'email_operations_page' %}
 {% set on_email_qa_dashboard = request.endpoint == 'email_qa_dashboard_page' %}
-{% set on_email_readiness = request.endpoint in ['email_readiness_page', 'email_readiness_update'] %}
-{% set on_whatsapp_queue = request.endpoint in ['whatsapp_queue_list', 'whatsapp_queue_detail', 'queue_whatsapp_from_draft', 'approve_whatsapp_queue_item', 'send_whatsapp_queue_item', 'cancel_whatsapp_queue_item'] %}
-{% set on_usage = request.endpoint == 'usage_page' %}
-{% set on_audit = request.endpoint == 'audit_logs' %}
+{% set on_email_readiness    = request.endpoint in ['email_readiness_page', 'email_readiness_update'] %}
+{% set on_whatsapp_queue     = request.endpoint in ['whatsapp_queue_list', 'whatsapp_queue_detail',
+                                 'queue_whatsapp_from_draft', 'approve_whatsapp_queue_item',
+                                 'send_whatsapp_queue_item', 'cancel_whatsapp_queue_item'] %}
+{% set on_usage  = request.endpoint == 'usage_page' %}
+{% set on_audit  = request.endpoint == 'audit_logs' %}
 
 <div class="d-flex app-layout">
+
+  {# ── Desktop sidebar ── #}
   {% if session.user_id %}
   <aside class="app-sidebar d-none d-lg-flex flex-column">
     <a class="sidebar-brand" href="{{ url_for('dashboard') }}">
@@ -42,47 +71,74 @@
       <span>CA Assist</span>
     </a>
 
+    {# Command Bar trigger #}
+    <button class="sidebar-cmd-trigger" id="cmdBarTrigger" type="button" aria-label="Open command bar">
+      <i class="bi bi-search" style="font-size:.85rem;"></i>
+      <span>Search or jump…</span>
+      <span class="sidebar-cmd-kbd">⌘K</span>
+    </button>
+
     <div class="sidebar-section">
-      <p class="sidebar-title">Main</p>
-      <a href="{{ url_for('dashboard') }}" class="sidebar-link {{ 'active' if on_dashboard else '' }}"><i class="bi bi-grid-fill"></i>Dashboard</a>
-      <a href="{{ url_for('clients_list') }}" class="sidebar-link {{ 'active' if on_clients else '' }}"><i class="bi bi-people-fill"></i>Clients</a>
-      <a href="{{ url_for('tasks_list') }}" class="sidebar-link {{ 'active' if on_tasks else '' }}"><i class="bi bi-list-check"></i>Tasks</a>
+      <p class="sidebar-title">Workspace</p>
+      <a href="{{ url_for('inbox_page') }}" class="sidebar-link {{ 'active' if on_inbox else '' }}">
+        <i class="bi bi-inbox-fill"></i>Inbox
+        {# TODO: replace 0 with real unread count from context #}
+      </a>
+      <a href="{{ url_for('work_list') }}" class="sidebar-link {{ 'active' if on_work else '' }}">
+        <i class="bi bi-kanban"></i>Work
+      </a>
+      <a href="{{ url_for('clients_list') }}" class="sidebar-link {{ 'active' if on_clients else '' }}">
+        <i class="bi bi-people-fill"></i>Clients
+      </a>
     </div>
 
-    {% if not current_role or current_role in ['owner', 'partner', 'manager'] %}
     <div class="sidebar-section">
-      <p class="sidebar-title">AI</p>
+      <p class="sidebar-title">Ledger</p>
+      <a href="{{ url_for('email_delivery_logs_page') }}" class="sidebar-link {{ 'active' if on_email_delivery_logs and not on_audit else '' }}">
+        <i class="bi bi-send-check"></i>Sent
+      </a>
+      {% if current_role in ['owner', 'partner', 'manager'] %}
+      <a href="{{ url_for('audit_logs') }}" class="sidebar-link {{ 'active' if on_audit else '' }}">
+        <i class="bi bi-shield-check"></i>Audit Trail
+      </a>
+      {% endif %}
+    </div>
+
+    <div class="sidebar-section">
+      <p class="sidebar-title">Team</p>
+      <a href="{{ url_for('team_agents_page') }}" class="sidebar-link {{ 'active' if on_team else '' }}">
+        <i class="bi bi-cpu-fill" style="color:var(--agent);"></i>Agents
+      </a>
+    </div>
+
+    {% if current_role in ['owner', 'partner', 'manager', 'senior'] %}
+    <div class="sidebar-section">
+      <p class="sidebar-title">Tools</p>
       <a href="{{ url_for('automation_center') }}" class="sidebar-link {{ 'active' if on_ai_automation else '' }}"><i class="bi bi-cpu"></i>AI Automation</a>
-      <a href="{{ url_for('automation_registry_page') }}" class="sidebar-link {{ 'active' if on_registry else '' }}"><i class="bi bi-diagram-3"></i>Automation Registry</a>
-      <a href="{{ url_for('credentials_page') }}" class="sidebar-link {{ 'active' if on_credentials else '' }}"><i class="bi bi-key"></i>Credential Vault</a>
-      <a href="{{ url_for('portal_readiness_page') }}" class="sidebar-link {{ 'active' if on_portal_readiness else '' }}"><i class="bi bi-shield-check"></i>Portal Readiness</a>
-      <a href="{{ url_for('accounting_connectors_page') }}" class="sidebar-link {{ 'active' if on_accounting_connectors else '' }}"><i class="bi bi-plug"></i>Accounting Connectors</a>
-      <a href="{{ url_for('accounting_data_page') }}" class="sidebar-link {{ 'active' if on_accounting_data else '' }}"><i class="bi bi-table"></i>Accounting Data</a>
-      <a href="{{ url_for('gst_reconciliation_page') }}" class="sidebar-link {{ 'active' if on_gst_reconciliation else '' }}"><i class="bi bi-receipt-cutoff"></i>GST Reconciliation</a>
       <a href="{{ url_for('gst_dashboard_page') }}" class="sidebar-link {{ 'active' if on_gst_dashboard else '' }}"><i class="bi bi-speedometer2"></i>GST Control Room</a>
-      <a href="{{ url_for('gstr3b_review_packs_list') }}" class="sidebar-link {{ 'active' if on_gstr3b_review_packs else '' }}"><i class="bi bi-file-text"></i>GSTR-3B Review Packs</a>
-      <a href="{{ url_for('voice_assistant_page') }}" class="sidebar-link {{ 'active' if on_voice_assistant else '' }}"><i class="bi bi-mic-fill"></i>Jarvis Assistant</a>
+      <a href="{{ url_for('gst_reconciliation_page') }}" class="sidebar-link {{ 'active' if on_gst_reconciliation else '' }}"><i class="bi bi-receipt-cutoff"></i>GST Reconciliation</a>
+      <a href="{{ url_for('gstr3b_review_packs_list') }}" class="sidebar-link {{ 'active' if on_gstr3b_review_packs else '' }}"><i class="bi bi-file-text"></i>GSTR-3B Packs</a>
+      <a href="{{ url_for('accounting_data_page') }}" class="sidebar-link {{ 'active' if on_accounting_data else '' }}"><i class="bi bi-table"></i>Books</a>
+      <a href="{{ url_for('document_communications_register') }}" class="sidebar-link {{ 'active' if on_document_communications else '' }}"><i class="bi bi-envelope-open-text"></i>Comms Drafts</a>
+      <a href="{{ url_for('email_queue_list') }}" class="sidebar-link {{ 'active' if on_email_queue else '' }}"><i class="bi bi-envelope"></i>Email Queue</a>
+      <a href="{{ url_for('whatsapp_queue_list') }}" class="sidebar-link {{ 'active' if on_whatsapp_queue else '' }}"><i class="bi bi-whatsapp"></i>WhatsApp Queue</a>
+      <a href="{{ url_for('voice_assistant_page') }}" class="sidebar-link {{ 'active' if on_voice_assistant else '' }}"><i class="bi bi-mic-fill"></i>Jarvis</a>
     </div>
     {% endif %}
 
-    <div class="sidebar-section">
-      <p class="sidebar-title">Communications</p>
-      <a href="{{ url_for('document_communications_register') }}" class="sidebar-link {{ 'active' if on_document_communications else '' }}"><i class="bi bi-envelope-open-text"></i>Communication Drafts</a>
-      <a href="{{ url_for('email_queue_list') }}" class="sidebar-link {{ 'active' if on_email_queue else '' }}"><i class="bi bi-envelope"></i>Email Queue</a>
-      <a href="{{ url_for('whatsapp_queue_list') }}" class="sidebar-link {{ 'active' if on_whatsapp_queue else '' }}"><i class="bi bi-whatsapp"></i>WhatsApp Queue</a>
-      <a href="{{ url_for('email_delivery_logs_page') }}" class="sidebar-link {{ 'active' if on_email_delivery_logs else '' }}"><i class="bi bi-journal-text"></i>Email Delivery Logs</a>
-      <a href="{{ url_for('email_provider_settings_page') }}" class="sidebar-link {{ 'active' if on_email_providers else '' }}"><i class="bi bi-sliders"></i>Email Providers</a>
-      <a href="{{ url_for('email_operations_page') }}" class="sidebar-link {{ 'active' if on_email_operations else '' }}"><i class="bi bi-activity"></i>Email Operations</a>
-      <a href="{{ url_for('email_qa_dashboard_page') }}" class="sidebar-link {{ 'active' if on_email_qa_dashboard else '' }}"><i class="bi bi-clipboard2-check"></i>Email QA Dashboard</a>
-      <a href="{{ url_for('email_readiness_page') }}" class="sidebar-link {{ 'active' if on_email_readiness else '' }}"><i class="bi bi-check2-square"></i>Email Readiness</a>
-    </div>
-
     <div class="sidebar-section pb-3">
-      <p class="sidebar-title">Operations</p>
-      <a href="{{ url_for('usage_page') }}" class="sidebar-link {{ 'active' if on_usage else '' }}"><i class="bi bi-bar-chart-line"></i>Plan & Usage</a>
+      <p class="sidebar-title">Settings</p>
       {% if current_role in ['owner', 'partner', 'manager'] %}
-      <a href="{{ url_for('audit_logs') }}" class="sidebar-link {{ 'active' if on_audit else '' }}"><i class="bi bi-shield-check"></i>Audit Logs</a>
+      <a href="{{ url_for('automation_registry_page') }}" class="sidebar-link {{ 'active' if on_registry else '' }}"><i class="bi bi-diagram-3"></i>Automation Registry</a>
+      <a href="{{ url_for('portal_readiness_page') }}" class="sidebar-link {{ 'active' if on_portal_readiness else '' }}"><i class="bi bi-shield-check"></i>Portal Readiness</a>
+      <a href="{{ url_for('accounting_connectors_page') }}" class="sidebar-link {{ 'active' if on_accounting_connectors else '' }}"><i class="bi bi-plug"></i>Connectors</a>
+      <a href="{{ url_for('credentials_page') }}" class="sidebar-link {{ 'active' if on_credentials else '' }}"><i class="bi bi-key"></i>Credentials</a>
+      <a href="{{ url_for('email_provider_settings_page') }}" class="sidebar-link {{ 'active' if on_email_providers else '' }}"><i class="bi bi-sliders"></i>Email Providers</a>
+      <a href="{{ url_for('email_operations_page') }}" class="sidebar-link {{ 'active' if on_email_operations else '' }}"><i class="bi bi-activity"></i>Email Ops</a>
+      <a href="{{ url_for('email_qa_dashboard_page') }}" class="sidebar-link {{ 'active' if on_email_qa_dashboard else '' }}"><i class="bi bi-clipboard2-check"></i>Email QA</a>
+      <a href="{{ url_for('email_readiness_page') }}" class="sidebar-link {{ 'active' if on_email_readiness else '' }}"><i class="bi bi-check2-square"></i>Email Readiness</a>
       {% endif %}
+      <a href="{{ url_for('usage_page') }}" class="sidebar-link {{ 'active' if on_usage else '' }}"><i class="bi bi-bar-chart-line"></i>Plan & Usage</a>
     </div>
   </aside>
   {% endif %}
@@ -104,7 +160,7 @@
 
         <div class="d-flex align-items-center gap-2 flex-wrap">
           {% if current_role %}
-          <span class="meta-chip">Role: {{ current_role|capitalize }}</span>
+          <span class="meta-chip">{{ current_role|capitalize }}</span>
           {% endif %}
           {% if current_tenant %}
           <span class="meta-chip">Tenant #{{ current_tenant.id }}</span>
@@ -133,6 +189,7 @@
   </main>
 </div>
 
+{# ── Mobile sidebar (offcanvas) ── #}
 {% if session.user_id %}
 <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
   <div class="offcanvas-header border-bottom">
@@ -141,39 +198,165 @@
   </div>
   <div class="offcanvas-body p-0">
     <div class="list-group list-group-flush">
-      <a class="list-group-item list-group-item-action {{ 'active' if on_dashboard else '' }}" href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_inbox else '' }}" href="{{ url_for('inbox_page') }}">Inbox</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_work else '' }}" href="{{ url_for('work_list') }}">Work</a>
       <a class="list-group-item list-group-item-action {{ 'active' if on_clients else '' }}" href="{{ url_for('clients_list') }}">Clients</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_tasks else '' }}" href="{{ url_for('tasks_list') }}">Tasks</a>
-      {% if not current_role or current_role in ['owner', 'partner', 'manager'] %}
+      <a class="list-group-item list-group-item-action {{ 'active' if on_team else '' }}" href="{{ url_for('team_agents_page') }}">Agents</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_tasks else '' }}" href="{{ url_for('tasks_list') }}">Tasks (Legacy)</a>
+      {% if current_role in ['owner', 'partner', 'manager', 'senior'] %}
       <a class="list-group-item list-group-item-action {{ 'active' if on_ai_automation else '' }}" href="{{ url_for('automation_center') }}">AI Automation</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_registry else '' }}" href="{{ url_for('automation_registry_page') }}">Automation Registry</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_credentials else '' }}" href="{{ url_for('credentials_page') }}">Credential Vault</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_portal_readiness else '' }}" href="{{ url_for('portal_readiness_page') }}">Portal Readiness</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_accounting_connectors else '' }}" href="{{ url_for('accounting_connectors_page') }}">Accounting Connectors</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_accounting_data else '' }}" href="{{ url_for('accounting_data_page') }}">Accounting Data</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_gst_reconciliation else '' }}" href="{{ url_for('gst_reconciliation_page') }}">GST Reconciliation</a>
       <a class="list-group-item list-group-item-action {{ 'active' if on_gst_dashboard else '' }}" href="{{ url_for('gst_dashboard_page') }}">GST Control Room</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_gstr3b_review_packs else '' }}" href="{{ url_for('gstr3b_review_packs_list') }}">GSTR-3B Review Packs</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_voice_assistant else '' }}" href="{{ url_for('voice_assistant_page') }}">Jarvis Assistant</a>
-      {% endif %}
-      <a class="list-group-item list-group-item-action {{ 'active' if on_document_communications else '' }}" href="{{ url_for('document_communications_register') }}">Communication Drafts</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_gst_reconciliation else '' }}" href="{{ url_for('gst_reconciliation_page') }}">GST Reconciliation</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_gstr3b_review_packs else '' }}" href="{{ url_for('gstr3b_review_packs_list') }}">GSTR-3B Packs</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_accounting_data else '' }}" href="{{ url_for('accounting_data_page') }}">Books</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_document_communications else '' }}" href="{{ url_for('document_communications_register') }}">Comms Drafts</a>
       <a class="list-group-item list-group-item-action {{ 'active' if on_email_queue else '' }}" href="{{ url_for('email_queue_list') }}">Email Queue</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_email_delivery_logs else '' }}" href="{{ url_for('email_delivery_logs_page') }}">Email Delivery Logs</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_email_providers else '' }}" href="{{ url_for('email_provider_settings_page') }}">Email Providers</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_email_operations else '' }}" href="{{ url_for('email_operations_page') }}">Email Operations</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_email_qa_dashboard else '' }}" href="{{ url_for('email_qa_dashboard_page') }}">Email QA Dashboard</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_email_readiness else '' }}" href="{{ url_for('email_readiness_page') }}">Email Readiness</a>
-      <a class="list-group-item list-group-item-action {{ 'active' if on_usage else '' }}" href="{{ url_for('usage_page') }}">Plan & Usage</a>
-      {% if current_role in ['owner', 'partner', 'manager'] %}
-      <a class="list-group-item list-group-item-action {{ 'active' if on_audit else '' }}" href="{{ url_for('audit_logs') }}">Audit Logs</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_whatsapp_queue else '' }}" href="{{ url_for('whatsapp_queue_list') }}">WhatsApp Queue</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_voice_assistant else '' }}" href="{{ url_for('voice_assistant_page') }}">Jarvis</a>
       {% endif %}
+      {% if current_role in ['owner', 'partner', 'manager'] %}
+      <a class="list-group-item list-group-item-action {{ 'active' if on_registry else '' }}" href="{{ url_for('automation_registry_page') }}">Automation Registry</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_credentials else '' }}" href="{{ url_for('credentials_page') }}">Credentials</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_accounting_connectors else '' }}" href="{{ url_for('accounting_connectors_page') }}">Connectors</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_email_providers else '' }}" href="{{ url_for('email_provider_settings_page') }}">Email Providers</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_email_delivery_logs else '' }}" href="{{ url_for('email_delivery_logs_page') }}">Email Logs</a>
+      <a class="list-group-item list-group-item-action {{ 'active' if on_audit else '' }}" href="{{ url_for('audit_logs') }}">Audit Trail</a>
+      {% endif %}
+      <a class="list-group-item list-group-item-action {{ 'active' if on_usage else '' }}" href="{{ url_for('usage_page') }}">Plan & Usage</a>
     </div>
   </div>
 </div>
 {% endif %}
 
+{# ── Command Bar ── #}
+<div class="cmdbar-overlay" id="cmdBarOverlay" role="dialog" aria-modal="true" aria-label="Command bar">
+  <div class="cmdbar-modal">
+    <div class="cmdbar-input-wrap">
+      <i class="bi bi-search text-muted"></i>
+      <input id="cmdBarInput" class="cmdbar-input" type="text" placeholder="Search pages, clients, work items…" autocomplete="off" spellcheck="false"/>
+      <button class="btn btn-sm btn-outline-secondary" id="cmdBarClose" style="padding:.2rem .5rem;" aria-label="Close">Esc</button>
+    </div>
+    <div class="cmdbar-results" id="cmdBarResults"></div>
+    <div class="cmdbar-hint">
+      <span><kbd>↑↓</kbd> navigate</span>
+      <span><kbd>Enter</kbd> open</span>
+      <span><kbd>Esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
-{% block scripts %}{% endblock %}
+<script>
+(function () {
+  // ── Mobile sidebar toggle ──
+  const toggleBtn = document.getElementById('sidebarToggleBtn');
+  const mobileSidebar = document.getElementById('mobileSidebar');
+  if (toggleBtn && mobileSidebar) {
+    toggleBtn.addEventListener('click', function () {
+      const bs = new bootstrap.Offcanvas(mobileSidebar);
+      bs.show();
+    });
+  }
+
+  // ── Command Bar ──
+  const overlay  = document.getElementById('cmdBarOverlay');
+  const input    = document.getElementById('cmdBarInput');
+  const results  = document.getElementById('cmdBarResults');
+  const closeBtn = document.getElementById('cmdBarClose');
+  const trigger  = document.getElementById('cmdBarTrigger');
+
+  const NAV_ITEMS = [
+    { icon: 'bi-inbox-fill',      label: 'Inbox',                href: '/inbox' },
+    { icon: 'bi-kanban',          label: 'Work',                 href: '/work' },
+    { icon: 'bi-people-fill',     label: 'Clients',              href: '/clients' },
+    { icon: 'bi-cpu-fill',        label: 'Agents',               href: '/team/agents', agent: true },
+    { icon: 'bi-cpu',             label: 'AI Automation',        href: '/automation' },
+    { icon: 'bi-speedometer2',    label: 'GST Control Room',     href: '/gst-dashboard' },
+    { icon: 'bi-receipt-cutoff',  label: 'GST Reconciliation',   href: '/gst-reconciliation' },
+    { icon: 'bi-table',           label: 'Books / Accounting',   href: '/accounting-data' },
+    { icon: 'bi-envelope',        label: 'Email Queue',          href: '/email-queue' },
+    { icon: 'bi-whatsapp',        label: 'WhatsApp Queue',       href: '/whatsapp-queue' },
+    { icon: 'bi-envelope-open-text', label: 'Comms Drafts',      href: '/document-communications' },
+    { icon: 'bi-key',             label: 'Credentials',          href: '/credentials' },
+    { icon: 'bi-plug',            label: 'Connectors',           href: '/accounting-connectors' },
+    { icon: 'bi-shield-check',    label: 'Audit Trail',          href: '/audit-logs' },
+    { icon: 'bi-bar-chart-line',  label: 'Plan & Usage',         href: '/usage' },
+    { icon: 'bi-mic-fill',        label: 'Jarvis Assistant',     href: '/voice-assistant' },
+    { icon: 'bi-sliders',         label: 'Email Providers',      href: '/email-provider-settings' },
+    { icon: 'bi-diagram-3',       label: 'Automation Registry',  href: '/automation-registry' },
+    { icon: 'bi-list-check',      label: 'Tasks',                href: '/tasks' },
+  ];
+
+  let focusedIdx = -1;
+
+  function openCmdBar() {
+    overlay.classList.add('open');
+    input.value = '';
+    renderResults('');
+    input.focus();
+    focusedIdx = -1;
+  }
+
+  function closeCmdBar() {
+    overlay.classList.remove('open');
+  }
+
+  function renderResults(q) {
+    const filtered = q
+      ? NAV_ITEMS.filter(i => i.label.toLowerCase().includes(q.toLowerCase()))
+      : NAV_ITEMS;
+
+    results.innerHTML = filtered.map((item, idx) => `
+      <a href="${item.href}" class="cmdbar-result-item" data-idx="${idx}">
+        <span class="cmdbar-result-icon" style="${item.agent ? 'color:var(--agent);background:var(--agent-soft);' : ''}">
+          <i class="bi ${item.icon}"></i>
+        </span>
+        <span>${item.label}</span>
+      </a>
+    `).join('');
+    focusedIdx = -1;
+  }
+
+  function moveFocus(dir) {
+    const items = results.querySelectorAll('.cmdbar-result-item');
+    if (!items.length) return;
+    items.forEach(el => el.classList.remove('focused'));
+    focusedIdx = (focusedIdx + dir + items.length) % items.length;
+    items[focusedIdx].classList.add('focused');
+    items[focusedIdx].scrollIntoView({ block: 'nearest' });
+  }
+
+  if (trigger) trigger.addEventListener('click', openCmdBar);
+  if (closeBtn) closeBtn.addEventListener('click', closeCmdBar);
+
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) closeCmdBar();
+  });
+
+  input.addEventListener('input', function () {
+    renderResults(this.value);
+  });
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveFocus(-1); }
+    else if (e.key === 'Enter') {
+      const focused = results.querySelector('.cmdbar-result-item.focused');
+      if (focused) { focused.click(); }
+    } else if (e.key === 'Escape') { closeCmdBar(); }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      overlay.classList.contains('open') ? closeCmdBar() : openCmdBar();
+    }
+    if (e.key === 'Escape' && overlay.classList.contains('open')) {
+      closeCmdBar();
+    }
+  });
+})();
+</script>
+{% block extra_scripts %}{% endblock %}
 </body>
 </html>

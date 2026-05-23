@@ -245,6 +245,7 @@ def login_required(view_func):
 
 		g.current_user_id = security.get_current_user_id()
 		g.current_tenant_id = tenant_id
+		g.current_role = security.get_current_role()
 		return view_func(*args, **kwargs)
 
 	return wrapped
@@ -2927,6 +2928,426 @@ def portal_browser_fetch(credential_id):
 		return jsonify({"error": str(exc)}), 200
 	except Exception as exc:
 		return jsonify({"error": f"Fetch error: {exc}"}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 15 — Human + Agent Workspace: Inbox, Work, Team → Agents
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Inbox ──────────────────────────────────────────────────────────────────
+
+@app.get("/inbox")
+@login_required
+def inbox_page():
+	"""Inbox: items that need the current user — releases waiting and assigned work."""
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	selected_id = request.args.get("id", type=int)
+
+	with db.get_db() as conn:
+		# Works in 'proposed' state where the current user is the authorizer
+		releases = conn.execute("""
+			SELECT w.*, ce.name AS client_name
+			FROM works w
+			LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+			WHERE w.tenant_id = ? AND w.status = 'proposed' AND w.authorizer_user_id = ?
+			ORDER BY w.updated_at DESC
+			LIMIT 50
+		""", (tenant_id, user_id)).fetchall()
+
+		# Works assigned to the current user as person-doer
+		assigned = conn.execute("""
+			SELECT w.*, ce.name AS client_name
+			FROM works w
+			LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+			WHERE w.tenant_id = ? AND w.doer_kind = 'person' AND w.doer_id = ?
+			  AND w.status NOT IN ('released', 'filed', 'rejected')
+			ORDER BY w.due_date ASC NULLS LAST, w.updated_at DESC
+			LIMIT 50
+		""", (tenant_id, user_id)).fetchall()
+
+		selected = None
+		events = []
+		if selected_id:
+			selected = conn.execute("""
+				SELECT w.*, ce.name AS client_name
+				FROM works w
+				LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+				WHERE w.tenant_id = ? AND w.id = ?
+			""", (tenant_id, selected_id)).fetchone()
+			if selected:
+				events = conn.execute("""
+					SELECT we.*, u.name AS actor_name
+					FROM work_events we
+					LEFT JOIN users u ON u.id = we.actor_id AND we.actor_kind = 'person'
+					WHERE we.tenant_id = ? AND we.work_id = ?
+					ORDER BY we.created_at ASC
+				""", (tenant_id, selected_id)).fetchall()
+
+	# Auto-select first item if none specified
+	if not selected_id:
+		all_items = list(releases) + list(assigned)
+		if all_items:
+			selected_id = all_items[0]["id"]
+			return redirect(url_for("inbox_page", id=selected_id))
+
+	return render_template(
+		"inbox.html",
+		releases=releases,
+		assigned=assigned,
+		selected=selected,
+		selected_id=selected_id,
+		events=events,
+	)
+
+
+# ── Work list ──────────────────────────────────────────────────────────────
+
+@app.get("/work")
+@login_required
+def work_list():
+	tenant_id = g.current_tenant_id
+	page = request.args.get("page", 1, type=int)
+	status_filter = request.args.get("status", "").strip()
+	kind_filter = request.args.get("kind", "").strip()
+	doer_filter = request.args.get("doer", "").strip()
+	per_page = 40
+
+	with db.get_db() as conn:
+		where_parts = ["w.tenant_id = ?"]
+		params = [tenant_id]
+		if status_filter:
+			where_parts.append("w.status = ?")
+			params.append(status_filter)
+		if kind_filter:
+			where_parts.append("w.kind = ?")
+			params.append(kind_filter)
+		if doer_filter:
+			where_parts.append("w.doer_kind = ?")
+			params.append(doer_filter)
+
+		where_clause = " AND ".join(where_parts)
+		total = conn.execute(
+			f"SELECT COUNT(*) FROM works w WHERE {where_clause}", params
+		).fetchone()[0]
+		total_pages = max(1, (total + per_page - 1) // per_page)
+		offset = (page - 1) * per_page
+
+		works = conn.execute(f"""
+			SELECT w.*,
+				ce.name AS client_name,
+				auth.name AS authorizer_name,
+				doer_u.name AS doer_name
+			FROM works w
+			LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+			LEFT JOIN users auth ON auth.id = w.authorizer_user_id
+			LEFT JOIN users doer_u ON doer_u.id = w.doer_id AND w.doer_kind = 'person'
+			WHERE {where_clause}
+			ORDER BY
+				CASE w.status WHEN 'proposed' THEN 0 WHEN 'in_review' THEN 1 WHEN 'in_progress' THEN 2 ELSE 3 END,
+				w.due_date ASC NULLS LAST,
+				w.updated_at DESC
+			LIMIT ? OFFSET ?
+		""", params + [per_page, offset]).fetchall()
+
+	return render_template(
+		"work_list.html",
+		works=works,
+		page=page,
+		total_pages=total_pages,
+		status_filter=status_filter,
+		kind_filter=kind_filter,
+		doer_filter=doer_filter,
+	)
+
+
+@app.get("/work/new")
+@login_required
+def work_new():
+	"""Redirect stub — inline form coming; for now redirect to work list."""
+	flash("New Work item form coming soon. For now create a Task.", "info")
+	return redirect(url_for("work_list"))
+
+
+@app.get("/work/<int:work_id>")
+@login_required
+def work_detail(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	current_role = g.current_role
+
+	with db.get_db() as conn:
+		work = conn.execute("""
+			SELECT w.*, ce.name AS client_name
+			FROM works w
+			LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+			WHERE w.tenant_id = ? AND w.id = ?
+		""", (tenant_id, work_id)).fetchone()
+		if not work:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+
+		events = conn.execute("""
+			SELECT we.*, u.name AS actor_name
+			FROM work_events we
+			LEFT JOIN users u ON u.id = we.actor_id AND we.actor_kind = 'person'
+			WHERE we.tenant_id = ? AND we.work_id = ?
+			ORDER BY we.created_at ASC
+		""", (tenant_id, work_id)).fetchall()
+
+		doer_name = None
+		if work["doer_kind"] == "person" and work["doer_id"]:
+			row = conn.execute("SELECT name FROM users WHERE id = ?", (work["doer_id"],)).fetchone()
+			doer_name = row["name"] if row else None
+
+		authorizer_name = None
+		if work["authorizer_user_id"]:
+			row = conn.execute("SELECT name FROM users WHERE id = ?", (work["authorizer_user_id"],)).fetchone()
+			authorizer_name = row["name"] if row else None
+
+	# Can release: authorizer OR owner/partner
+	can_release = (
+		current_role in ("owner", "partner")
+		or work["authorizer_user_id"] == user_id
+	)
+
+	return render_template(
+		"work_detail.html",
+		work=work,
+		events=events,
+		doer_name=doer_name,
+		authorizer_name=authorizer_name,
+		can_release=can_release,
+	)
+
+
+@app.post("/work/<int:work_id>/comment")
+@login_required
+def work_add_comment(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	body = (request.form.get("body") or "").strip()
+	if not body:
+		flash("Comment cannot be empty.", "warning")
+		return redirect(url_for("work_detail", work_id=work_id))
+
+	with db.get_db() as conn:
+		# Verify work belongs to tenant
+		w = conn.execute(
+			"SELECT id FROM works WHERE id = ? AND tenant_id = ?", (work_id, tenant_id)
+		).fetchone()
+		if not w:
+			flask_flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+		conn.execute("""
+			INSERT INTO work_events (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+			VALUES (?, ?, 'comment', 'person', ?, ?)
+		""", (tenant_id, work_id, user_id, body))
+		# Update work updated_at
+		conn.execute(
+			"UPDATE works SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (work_id,)
+		)
+
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+@app.post("/work/<int:work_id>/status")
+@login_required
+@security.require_roles(["manager", "partner", "owner", "senior"])
+def work_status_update(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	new_status = (request.form.get("status") or "").strip()
+	valid_statuses = {"new","in_progress","proposed","in_review","changes_requested","released","filed","rejected"}
+	if new_status not in valid_statuses:
+		flash("Invalid status.", "warning")
+		return redirect(url_for("work_detail", work_id=work_id))
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, tenant_id FROM works WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id)
+		).fetchone()
+		if not w:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+		old_status = w["status"]
+		conn.execute(
+			"UPDATE works SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(new_status, work_id)
+		)
+		conn.execute("""
+			INSERT INTO work_events (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+			VALUES (?, ?, 'system', 'person', ?, ?)
+		""", (tenant_id, work_id, user_id, f"Status changed from {old_status} to {new_status}"))
+
+	flash(f"Status updated to {new_status.replace('_',' ')}.", "success")
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+@app.post("/work/<int:work_id>/release")
+@login_required
+def work_release(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	current_role = g.current_role
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, authorizer_user_id FROM works WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id)
+		).fetchone()
+		if not w:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+
+		can_release = (
+			current_role in ("owner", "partner")
+			or w["authorizer_user_id"] == user_id
+		)
+		if not can_release:
+			flash("You are not the authorizer for this Work item.", "warning")
+			return redirect(url_for("work_detail", work_id=work_id))
+
+		conn.execute(
+			"UPDATE works SET status = 'released', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(work_id,)
+		)
+		conn.execute("""
+			INSERT INTO work_events (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+			VALUES (?, ?, 'outcome', 'person', ?, 'Released by authorizer')
+		""", (tenant_id, work_id, user_id))
+
+	flash("Work item released.", "success")
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+@app.post("/work/<int:work_id>/reject")
+@login_required
+def work_reject(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	reason = (request.form.get("reason") or "other").strip()
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, authorizer_user_id FROM works WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id)
+		).fetchone()
+		if not w:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+
+		can_reject = (
+			g.current_role in ("owner", "partner")
+			or w["authorizer_user_id"] == user_id
+		)
+		if not can_reject:
+			flash("You are not authorised to reject this Work item.", "warning")
+			return redirect(url_for("work_detail", work_id=work_id))
+
+		conn.execute(
+			"UPDATE works SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(work_id,)
+		)
+		conn.execute("""
+			INSERT INTO work_events (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+			VALUES (?, ?, 'system', 'person', ?, ?)
+		""", (tenant_id, work_id, user_id, f"Rejected: {reason.replace('_', ' ')}"))
+
+	flash(f"Work item rejected ({reason.replace('_',' ')}).", "info")
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+# ── Team → Agents ──────────────────────────────────────────────────────────
+
+def _build_agent_list():
+	"""Derive agent profile data from the automation registry."""
+	from collections import defaultdict
+	import re
+
+	agent_map = defaultdict(lambda: {
+		"name": "",
+		"category": "",
+		"skills": set(),
+		"automations": [],
+		"requires_review": False,
+		"automation_count": 0,
+	})
+
+	for entry in automation_registry.AUTOMATION_REGISTRY:
+		aname = entry.get("assigned_agent") or "Unknown Agent"
+		info = agent_map[aname]
+		info["name"] = aname
+		info["category"] = entry.get("category") or ""
+		# Derive skills from task_types and output_type
+		for tt in (entry.get("task_types") or []):
+			info["skills"].add(tt)
+		if entry.get("output_type"):
+			info["skills"].add(entry["output_type"].replace("_", " "))
+		if entry.get("requires_human_review"):
+			info["requires_review"] = True
+		info["automations"].append(entry)
+		info["automation_count"] += 1
+
+	agents = []
+	for name, info in sorted(agent_map.items()):
+		# Generate a URL-safe slug from the agent name
+		slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+		# Initials from first two words
+		words = name.split()
+		initials = "".join(w[0] for w in words[:2]).upper()
+		agents.append({
+			"name": info["name"],
+			"slug": slug,
+			"category": info["category"],
+			"skills": sorted(info["skills"])[:8],
+			"automations": info["automations"],
+			"automation_count": info["automation_count"],
+			"requires_review": info["requires_review"],
+			"initials": initials,
+			"sample_description": (info["automations"][0].get("description") or "") if info["automations"] else "",
+		})
+
+	return agents
+
+
+@app.get("/team/agents")
+@login_required
+def team_agents_page():
+	agents = _build_agent_list()
+	active_count = sum(
+		1 for a in automation_registry.AUTOMATION_REGISTRY if a.get("is_active")
+	)
+	review_count = sum(
+		1 for a in automation_registry.AUTOMATION_REGISTRY if a.get("requires_human_review")
+	)
+	categories = sorted({a["category"] for a in agents if a["category"]})
+	return render_template(
+		"team_agents.html",
+		agents=agents,
+		active_count=active_count,
+		review_count=review_count,
+		categories=categories,
+	)
+
+
+@app.get("/team/agents/<slug>")
+@login_required
+def team_agent_profile(slug):
+	agents = _build_agent_list()
+	agent = next((a for a in agents if a["slug"] == slug), None)
+	if not agent:
+		flash("Agent not found.", "warning")
+		return redirect(url_for("team_agents_page"))
+
+	active_automations = sum(1 for a in agent["automations"] if a.get("is_active"))
+	return render_template(
+		"team_agent_profile.html",
+		agent=agent,
+		automations=agent["automations"],
+		active_automations=active_automations,
+	)
 
 
 if __name__ == "__main__":
