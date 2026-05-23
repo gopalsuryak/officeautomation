@@ -1,7 +1,8 @@
 # CA Assist — Comprehensive Audit: Bugs & Remaining Build
 
 > Prepared: May 23, 2026  
-> Scope: Full codebase review of `saas/` + `ca-agent/` + docs
+> Scope: Full codebase review of `saas/` + `ca-agent/` + docs  
+> **Last updated: May 23, 2026 — All 15 bugs resolved on `production-readiness-wave13` (head: `8f58d84`)**
 
 ---
 
@@ -20,9 +21,12 @@
 
 ## 1. Critical Bugs
 
+> ✅ All critical bugs resolved on `production-readiness-wave13`.
+
 ### BUG-01 — `plans.py` and `billing.py` client limits are completely different
 **File:** `saas/billing.py` vs `saas/plans.py`  
-**Severity:** Critical — plan limit enforcement is broken
+**Severity:** Critical — plan limit enforcement is broken  
+**Status:** ✅ FIXED — `clients` key removed from `billing.py`; `plans.py` is now the single source of truth
 
 `billing.py` (used for Razorpay order creation / pricing display):
 ```
@@ -44,7 +48,8 @@ The two sources of truth disagree by a factor of 10. Customers are sold one limi
 
 ### BUG-02 — Agency plan price is *cheaper* than Starter in `billing.py`
 **File:** `saas/billing.py`  
-**Severity:** Critical — incorrect billing
+**Severity:** Critical — incorrect billing  
+**Status:** ✅ FIXED — Agency corrected to `₹19,999` (1,999,900 paise)
 
 ```python
 "starter": { "price": 299900, "display": "₹2,999" },   # ₹2,999/month
@@ -58,7 +63,8 @@ The Agency plan is priced at ₹1,999 — less than the Starter plan at ₹2,999
 
 ### BUG-03 — `mask_secret` imported then immediately shadowed in `email_provider_settings.py`
 **File:** `saas/email_provider_settings.py`  
-**Severity:** Critical — the imported function that handles `ENCRYPTION_PLACEHOLDER` is silently replaced
+**Severity:** Critical — the imported function that handles `ENCRYPTION_PLACEHOLDER` is silently replaced  
+**Status:** ✅ FIXED — Local `mask_secret` definition removed; imported version from `credential_vault` used
 
 ```python
 from credential_vault import encrypt_secret, mask_secret   # ← imported
@@ -77,7 +83,8 @@ The local `mask_secret` never returns `"Needs re-entry"` for unencrypted `ENCRYP
 
 ### BUG-04 — `voice_assistant.py` discards `tenant_id` on every call
 **File:** `saas/voice_assistant.py`, line 6 of `parse_voice_command`  
-**Severity:** Critical — all voice commands are tenant-unscoped
+**Severity:** Critical — all voice commands are tenant-unscoped  
+**Status:** ✅ FIXED — `tenant_id` now passed into client-search and task-creation helpers
 
 ```python
 def parse_voice_command(tenant_id, command_text):
@@ -91,9 +98,12 @@ Downstream task-creation and client-search actions based on voice commands have 
 
 ## 2. Medium Bugs
 
+> ✅ All medium bugs resolved on `production-readiness-wave13`.
+
 ### BUG-05 — `billing.py` raises bare `KeyError` for unknown plans
 **File:** `saas/billing.py`, `create_order()`  
-**Severity:** Medium — unhandled exception leaks to the user
+**Severity:** Medium — unhandled exception leaks to the user  
+**Status:** ✅ FIXED — `PLANS.get(plan)` with descriptive `ValueError` on unknown plan
 
 ```python
 def create_order(plan: str) -> dict:
@@ -112,7 +122,8 @@ if not plan_data:
 
 ### BUG-06 — `usage.py` uses naive local time for period key
 **File:** `saas/usage.py`, `current_period_month()`  
-**Severity:** Medium — period rollover is server-TZ-dependent
+**Severity:** Medium — period rollover is server-TZ-dependent  
+**Status:** ✅ FIXED — Uses `datetime.now(timezone.utc).strftime("%Y-%m")` now
 
 ```python
 def current_period_month():
@@ -126,7 +137,8 @@ The rest of the codebase uses `datetime.now(timezone.utc).isoformat()`. On a ser
 
 ### BUG-07 — `provisioner.py` has a hardcoded Windows path as default
 **File:** `saas/provisioner.py`  
-**Severity:** Medium — breaks on any non-Windows deployment
+**Severity:** Medium — breaks on any non-Windows deployment  
+**Status:** ✅ FIXED — Default removed; `RuntimeError` raised at startup if env var is missing
 
 ```python
 AGENT_WORKING_DIR = os.environ.get(
@@ -142,7 +154,8 @@ If `AGENT_WORKING_DIR` env var is not set in production/staging on Linux, the ag
 
 ### BUG-08 — `security.py` IP spoofing via `X-Forwarded-For`
 **File:** `saas/security.py`, `get_request_ip()`  
-**Severity:** Medium — audit log IP addresses can be forged
+**Severity:** Medium — audit log IP addresses can be forged  
+**Status:** ✅ FIXED — `X-Forwarded-For` only trusted when `request.remote_addr` is in `TRUSTED_PROXY_IPS`
 
 ```python
 def get_request_ip():
@@ -159,7 +172,8 @@ Any client can set `X-Forwarded-For: 127.0.0.1` to spoof a loopback address in a
 
 ### BUG-09 — `portal_readiness.py` calls a private `credential_vault` function
 **File:** `saas/portal_readiness.py`  
-**Severity:** Medium — fragile internal coupling
+**Severity:** Medium — fragile internal coupling  
+**Status:** ✅ FIXED — Public `is_secret_available()` added to `credential_vault` and called from `portal_readiness.py` (commit `8f58d84`)
 
 ```python
 secret_available": credential_vault._secret_is_available(credential.get("secret_value_encrypted")),
@@ -172,7 +186,8 @@ secret_available": credential_vault._secret_is_available(credential.get("secret_
 
 ### BUG-10 — Missing indexes on `tenant_id` for every major table
 **File:** `saas/db.py`  
-**Severity:** Medium — performance degradation at scale
+**Severity:** Medium — performance degradation at scale  
+**Status:** ✅ FIXED — `CREATE INDEX IF NOT EXISTS` added for all major tables including `compliance_tasks`, `client_entities`, `email_send_queue`, `audit_logs`, and more
 
 None of the 20+ tables in `db.py` have explicit indexes on `tenant_id`. Every tenant-scoped query does a full table scan.
 
@@ -182,7 +197,8 @@ None of the 20+ tables in `db.py` have explicit indexes on `tenant_id`. Every te
 
 ### BUG-11 — `smtp_sender.py` missing `ehlo()` before `starttls()`
 **File:** `saas/smtp_sender.py`, `send_approved_queue_item_via_smtp()`  
-**Severity:** Medium — SMTP send fails against some servers
+**Severity:** Medium — SMTP send fails against some servers  
+**Status:** ✅ FIXED — `server.ehlo()` added before `starttls()` and again after TLS upgrade (RFC 3207 compliant)
 
 ```python
 with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
@@ -197,9 +213,12 @@ RFC 3207 requires an `EHLO` exchange before `STARTTLS`. Python's `smtplib` does 
 
 ## 3. Minor / Low-Priority Bugs
 
+> ✅ All minor bugs resolved on `production-readiness-wave13`.
+
 ### BUG-12 — `app.py` flash() wrapper over-sanitizes legitimate messages
 **File:** `saas/app.py`, `flash()` wrapper  
-**Severity:** Low
+**Severity:** Low  
+**Status:** ✅ FIXED — Sanitization now only triggers on `danger`/`error` category with Traceback-like content
 
 The wrapper replaces *any* flash message containing `"failed"` or `"error"` (case-insensitive) with a generic string. Legitimate messages like `"No tasks failed this month"` or `"Error count: 0"` would be silently replaced.
 
@@ -209,7 +228,8 @@ The wrapper replaces *any* flash message containing `"failed"` or `"error"` (cas
 
 ### BUG-13 — `compliance_tasks.py` missing `ai_draft_ready` and `ready_for_ai` in `_resolve_pending_from`
 **File:** `saas/compliance_tasks.py`  
-**Severity:** Low
+**Severity:** Low  
+**Status:** ✅ FIXED — `"ai_draft_ready": "system"` and `"ready_for_ai": "staff"` added to the fixed-status map
 
 `_resolve_pending_from` has no explicit entry for `ai_draft_ready` or `ready_for_ai`, so both return the existing stale `pending_from` value rather than `"system"`.
 
@@ -223,7 +243,8 @@ The wrapper replaces *any* flash message containing `"failed"` or `"error"` (cas
 
 ### BUG-14 — Architecture doc column name `auth_payload_json` doesn't exist in db schema
 **File:** `docs/ACCOUNTING_CONNECTORS_ARCHITECTURE.md` vs `saas/db.py`  
-**Severity:** Low / Doc discrepancy
+**Severity:** Low / Doc discrepancy  
+**Status:** ✅ FIXED — Architecture doc updated to use `metadata_json`
 
 The architecture doc specifies `auth_payload_json` as a column on `accounting_connections`, but `db.py` creates `metadata_json` instead. Any future developer building the Zoho/Tally connector from the architecture doc will use the wrong column name.
 
@@ -233,7 +254,8 @@ The architecture doc specifies `auth_payload_json` as a column on `accounting_co
 
 ### BUG-15 — `manual_upload_parser.py` imports `pandas` unconditionally
 **File:** `saas/manual_upload_parser.py`  
-**Severity:** Low — if `pandas` is not installed the whole module fails to import at startup
+**Severity:** Low — if `pandas` is not installed the whole module fails to import at startup  
+**Status:** ✅ FIXED — `pandas` and `openpyxl` added to `saas/requirements.txt`
 
 `import pandas as pd` is at the top of the file. `pandas` is not in `saas/requirements.txt`. If the package is missing, Flask will fail to start entirely rather than only failing at parse time.
 
@@ -468,17 +490,17 @@ One-click export of all audit logs, review actions, and AI outputs for a given t
 
 ## 7. Security & Hardening Gaps
 
-| ID | Gap | File | Priority |
-|----|-----|------|----------|
-| SEC-01 | Missing `Content-Security-Policy` header | `security.py` | High |
-| SEC-02 | IP spoofing via `X-Forwarded-For` without proxy trust check | `security.py` | Medium |
-| SEC-03 | `SECRET_KEY` falls back to hardcoded dev string in non-production environments | `app.py` | Medium |
-| SEC-04 | SMTP password decrypted in memory but error tracebacks may include partial state | `smtp_sender.py` | Medium |
-| SEC-05 | No rate limiting on `/login`, `/signup`, `/forgot-password` (WORK-01) | `app.py` | High |
-| SEC-06 | No CAPTCHA or account lockout after failed login attempts | `app.py` | Medium |
-| SEC-07 | `pandas` reads user-uploaded Excel files without size or formula injection guards | `manual_upload_parser.py` | Medium |
-| SEC-08 | `PAPERCLIP_ADMIN_KEY` default is empty string — any request to Paperclip would be unauthenticated | `provisioner.py` | High |
-| SEC-09 | Razorpay `RAZORPAY_KEY_SECRET` default is empty string — payment verification always succeeds if `verify_payment_signature` doesn't error on empty key | `billing.py` | High |
+| ID | Gap | File | Priority | Status |
+|----|-----|------|----------|--------|
+| SEC-01 | Missing `Content-Security-Policy` header | `security.py` | High | ✅ Fixed |
+| SEC-02 | IP spoofing via `X-Forwarded-For` without proxy trust check | `security.py` | Medium | ✅ Fixed (BUG-08) |
+| SEC-03 | `SECRET_KEY` falls back to hardcoded dev string in non-production environments | `app.py` | Medium | Open |
+| SEC-04 | SMTP password decrypted in memory but error tracebacks may include partial state | `smtp_sender.py` | Medium | Open |
+| SEC-05 | No rate limiting on `/login`, `/signup`, `/forgot-password` (WORK-01) | `app.py` | High | Open |
+| SEC-06 | No CAPTCHA or account lockout after failed login attempts | `app.py` | Medium | Open |
+| SEC-07 | `pandas` reads user-uploaded Excel files without size or formula injection guards | `manual_upload_parser.py` | Medium | Open |
+| SEC-08 | `PAPERCLIP_ADMIN_KEY` default is empty string — any request to Paperclip would be unauthenticated | `provisioner.py` | High | ✅ Fixed |
+| SEC-09 | Razorpay `RAZORPAY_KEY_SECRET` default is empty string — payment verification always succeeds if `verify_payment_signature` doesn't error on empty key | `billing.py` | High | ✅ Fixed |
 
 ---
 
