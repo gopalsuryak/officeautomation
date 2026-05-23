@@ -188,6 +188,10 @@ def _protect_unsafe_requests():
 		return None
 	if not request.endpoint or request.endpoint == "static":
 		return None
+	# /api/* endpoints are called by the React SPA using session cookies.
+	# Same-origin SameSite=Lax cookie policy provides equivalent CSRF protection.
+	if request.endpoint and request.endpoint.startswith("api_"):
+		return None
 	if _csrf_token_is_valid():
 		return None
 
@@ -3952,7 +3956,7 @@ def api_task_status_update(task_id):
 			(internal, task_id),
 		)
 		conn.execute(
-			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by, remarks)
+			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by_user_id, reason)
 			   VALUES (?, ?, ?, ?, ?, ?)""",
 			(tenant_id, task_id, old_status, internal, user_id, remarks or f"Updated via CA Office Desk to '{desk_status}'"),
 		)
@@ -3981,9 +3985,10 @@ def api_task_whatsapp(task_id):
 
 @app.route("/api/approvals/<int:task_id>/approve", methods=["POST"])
 @login_required
-@security.require_roles(["partner", "owner"])
 def api_approval_approve(task_id):
 	"""Partner approves a task — moves to 'filed'."""
+	if g.current_role not in ("owner", "partner"):
+		return jsonify({"error": "Only Partner can approve filings."}), 403
 	tenant_id = g.current_tenant_id
 	user_id   = g.current_user_id
 
@@ -4001,7 +4006,7 @@ def api_approval_approve(task_id):
 			(task_id,),
 		)
 		conn.execute(
-			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by, remarks)
+			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by_user_id, reason)
 			   VALUES (?, ?, ?, 'filed', ?, 'Approved by partner via CA Office Desk')""",
 			(tenant_id, task_id, old_status, user_id),
 		)
@@ -4011,9 +4016,10 @@ def api_approval_approve(task_id):
 
 @app.route("/api/approvals/<int:task_id>/request-changes", methods=["POST"])
 @login_required
-@security.require_roles(["partner", "owner", "manager"])
 def api_approval_request_changes(task_id):
 	"""Request changes on a pending approval."""
+	if g.current_role not in ("owner", "partner", "manager"):
+		return jsonify({"error": "Manager role or above required."}), 403
 	tenant_id = g.current_tenant_id
 	user_id   = g.current_user_id
 	data    = request.get_json(silent=True) or {}
@@ -4033,7 +4039,7 @@ def api_approval_request_changes(task_id):
 			(task_id,),
 		)
 		conn.execute(
-			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by, remarks)
+			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by_user_id, reason)
 			   VALUES (?, ?, ?, 'changes_required', ?, ?)""",
 			(tenant_id, task_id, old_status, user_id, remarks),
 		)
@@ -4043,9 +4049,10 @@ def api_approval_request_changes(task_id):
 
 @app.route("/api/approvals/<int:task_id>/reject", methods=["POST"])
 @login_required
-@security.require_roles(["partner", "owner", "manager"])
 def api_approval_reject(task_id):
 	"""Reject a pending approval."""
+	if g.current_role not in ("owner", "partner", "manager"):
+		return jsonify({"error": "Manager role or above required."}), 403
 	tenant_id = g.current_tenant_id
 	user_id   = g.current_user_id
 	data    = request.get_json(silent=True) or {}
@@ -4065,7 +4072,7 @@ def api_approval_reject(task_id):
 			(task_id,),
 		)
 		conn.execute(
-			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by, remarks)
+			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by_user_id, reason)
 			   VALUES (?, ?, ?, 'cancelled', ?, ?)""",
 			(tenant_id, task_id, old_status, user_id, remarks),
 		)

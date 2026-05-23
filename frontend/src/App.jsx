@@ -393,7 +393,7 @@ function TaskPanel({ task, role, onStatusChange, reload }) {
   async function updateStatus(newStatus, remarks = "") {
     setBusy(true);
     try {
-      const res = await patchTaskStatus(task.id, newStatus, remarks);
+      const res = await patchTaskStatus(task._internal_id, newStatus, remarks);
       onStatusChange?.({ ...task, status: newStatus });
       reload?.();
       showToast(`Status updated to "${newStatus}"`);
@@ -418,7 +418,7 @@ function TaskPanel({ task, role, onStatusChange, reload }) {
   async function handleSendMail() {
     setBusy(true);
     try {
-      await postTaskEmail(task.id, { subject: `Update: ${task.work}`, to_client: true });
+      await postTaskEmail(task._internal_id, { subject: `Update: ${task.work}`, to_client: true });
       showToast("Email queued for delivery.");
     } catch (e) { showToast(e.message, "error"); }
     finally { setBusy(false); }
@@ -800,22 +800,22 @@ function ApprovalsScreen({ role }) {
                 <div className="mt-4 grid grid-cols-3 gap-3">
                   {canApprove && (
                     <button
-                      disabled={busy[task.id]}
-                      onClick={() => doApprove(task.id)}
+                      disabled={busy[task._internal_id]}
+                      onClick={() => doApprove(task._internal_id)}
                       className="h-11 rounded-2xl bg-slate-950 text-sm font-bold text-white disabled:opacity-50"
                     >Approve</button>
                   )}
                   {canReview && (
                     <button
-                      disabled={busy[task.id]}
-                      onClick={() => doChanges(task.id)}
+                      disabled={busy[task._internal_id]}
+                      onClick={() => doChanges(task._internal_id)}
                       className="h-11 rounded-2xl border border-slate-200 text-sm font-bold text-slate-700 disabled:opacity-50"
                     >Changes</button>
                   )}
                   {canReview && (
                     <button
-                      disabled={busy[task.id]}
-                      onClick={() => doReject(task.id)}
+                      disabled={busy[task._internal_id]}
+                      onClick={() => doReject(task._internal_id)}
                       className="h-11 rounded-2xl border border-rose-200 text-sm font-bold text-rose-600 disabled:opacity-50"
                     >Reject</button>
                   )}
