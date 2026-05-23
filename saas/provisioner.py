@@ -10,8 +10,14 @@ import urllib.error
 PAPERCLIP_URL       = os.environ.get("PAPERCLIP_API_URL", "http://localhost:3100")
 PAPERCLIP_ADMIN_KEY = os.environ.get("PAPERCLIP_ADMIN_API_KEY", "")
 AGENT_COMMAND       = os.environ.get("AGENT_COMMAND", "python agent.py")
-AGENT_WORKING_DIR   = os.environ.get("AGENT_WORKING_DIR", r"C:\agents\office automation\ca-agent")
+AGENT_WORKING_DIR   = os.environ.get("AGENT_WORKING_DIR")
 ANTHROPIC_API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
+
+
+def _validate_config():
+    """Validate required configuration at startup."""
+    if not AGENT_WORKING_DIR:
+        raise RuntimeError("AGENT_WORKING_DIR environment variable is required.")
 
 
 def _api(method: str, path: str, body: dict = None) -> dict:
@@ -71,3 +77,11 @@ def list_tasks(company_id: str) -> list:
 def get_task_comments(issue_id: str) -> list:
     result = _api("GET", f"/api/issues/{issue_id}/comments")
     return result if isinstance(result, list) else result.get("comments", [])
+
+
+def init_provisioner() -> None:
+    """
+    Validate provisioner configuration at startup.
+    Call this once when the application starts in production.
+    """
+    _validate_config()

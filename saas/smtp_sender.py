@@ -289,9 +289,11 @@ def send_approved_queue_item_via_smtp(tenant_id, queue_id, user_id=None, ip_addr
                 server.send_message(message)
                 success = True
         else:
-            # Use STARTTLS for port 587 and others
+            # Use STARTTLS for port 587 and others (RFC 3207 requires EHLO first)
             with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                server.ehlo()
                 server.starttls()
+                server.ehlo()  # Re-issue EHLO after TLS upgrade
                 server.login(smtp_username, smtp_password_secret)
                 server.send_message(message)
                 success = True

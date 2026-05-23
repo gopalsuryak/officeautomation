@@ -107,6 +107,35 @@
       </div>
       {% endif %}
 
+      <!-- Queue WhatsApp Form (WhatsApp drafts only, after review) -->
+      {% if draft.draft_type == 'whatsapp' and draft.status == 'reviewed' %}
+      <div class="card mb-3 border-success">
+        <div class="card-body">
+          <h5 class="card-title"><i class="bi bi-whatsapp me-1 text-success"></i>Queue WhatsApp for Sending</h5>
+          <p class="small text-muted">Creates a queue record. A manager must approve before the message is sent.</p>
+          <form method="post" action="{{ url_for('queue_whatsapp_from_draft', draft_id=draft.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <div class="mb-3">
+              <label class="form-label">To Phone <span class="text-danger">*</span></label>
+              <input type="tel" name="to_phone" class="form-control" value="{{ draft.get('client_phone', '') }}" placeholder="+91XXXXXXXXXX" required>
+              <small class="text-muted">E.164 format. Client phone auto-filled if available.</small>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Attachment URL</label>
+              <input type="url" name="media_url" class="form-control" placeholder="https://... (optional media attachment)">
+            </div>
+            <button type="submit" class="btn btn-success btn-sm">
+              <i class="bi bi-whatsapp me-1"></i>Queue WhatsApp
+            </button>
+          </form>
+        </div>
+      </div>
+      {% elif draft.draft_type == 'whatsapp' and draft.status != 'reviewed' %}
+      <div class="alert alert-info small mb-3">
+        Mark the draft as reviewed before queueing for WhatsApp.
+      </div>
+      {% endif %}
+
       <!-- Action Buttons -->
       <div class="mb-3 d-flex gap-2">
         <!-- Copy/Export Buttons -->

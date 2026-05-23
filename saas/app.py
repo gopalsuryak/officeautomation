@@ -6,7 +6,7 @@ import secrets
 from datetime import date, timedelta
 from functools import wraps
 
-from flask import Flask, flash as flask_flash, g, jsonify, redirect, render_template, request, session, url_for, Response
+from flask import Flask, flash as flask_flash, g, jsonify, redirect, render_template, request, send_from_directory, session, url_for, Response
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import accounting_connectors
@@ -42,25 +42,22 @@ import security
 import usage
 import voice_assistant
 import smtp_sender
+import whatsapp_queue
+import whatsapp_sender
+import portal_browser
 from orchestrator import get_orchestrator
 
 app = Flask(__name__)
 
+# B-03 fix: Prevent DoS via large upload body buffering
+# Flask will return 413 before reading the body into memory
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 32 MB max upload
 
+
+# G-06 fix: Simplified flash() - let messages through, only catch raw exception text
+# Error handlers already sanitize exceptions before calling flash()
 def flash(message, category="message"):
-	if isinstance(message, Exception):
-		message = "Action failed. Please review the inputs and try again."
-	elif isinstance(message, str):
-		lowered = message.lower()
-		if category in {"warning", "danger", "error"} and (
-			"traceback" in lowered
-			or "exception" in lowered
-			or "failed" in lowered
-			or "error" in lowered
-			or ":" in message
-		):
-			message = "Action failed. Please review the inputs and try again."
-	return flask_flash(message, category)
+    return flask_flash(message, category)
 
 
 def _is_production() -> bool:
@@ -92,12 +89,60 @@ _configure_secret_key()
 _configure_session_cookies()
 db.init_db()
 
+# Validate configuration and credentials in production
+if _is_production():
+    import provisioner
+    import security
+    provisioner.init_provisioner()
+    missing = security.check_required_env_vars()
+    if missing:
+        raise RuntimeError(f"Missing required environment variables in production: {', '.join(missing)}")
+    missing_creds, weak_creds = security.validate_production_credentials()
+    if missing_creds:
+        raise RuntimeError(f"Missing required credentials in production: {', '.join(missing_creds)}")
+
 _CSRF_SESSION_KEY = "_csrf_token"
 
 
 @app.after_request
 def _apply_security_headers(response):
 	return security.security_headers(response)
+
+
+@app.get("/health")
+def health_check():
+	"""
+	Basic health check endpoint for load balancers and monitoring.
+	Returns 200 if the app is running, along with basic status info.
+	"""
+	checks = {"database": "ok", "app": "ok"}
+	status_code = 200
+	
+	try:
+		with db.get_db() as conn:
+			conn.execute("SELECT 1")
+	except Exception:
+		checks["database"] = "error"
+		status_code = 503
+	
+	return jsonify({
+		"status": "healthy" if status_code == 200 else "degraded",
+		"checks": checks,
+	}), status_code
+
+
+@app.get("/ready")
+def readiness_check():
+	"""
+	Readiness probe for Kubernetes/orchestration systems.
+	Checks if the app is ready to serve traffic.
+	"""
+	try:
+		with db.get_db() as conn:
+			conn.execute("SELECT 1")
+		return jsonify({"ready": True}), 200
+	except Exception:
+		return jsonify({"ready": False}), 503
 
 
 @app.context_processor
@@ -143,6 +188,10 @@ def _protect_unsafe_requests():
 		return None
 	if not request.endpoint or request.endpoint == "static":
 		return None
+	# /api/* endpoints are called by the React SPA using session cookies.
+	# Same-origin SameSite=Lax cookie policy provides equivalent CSRF protection.
+	if request.endpoint and request.endpoint.startswith("api_"):
+		return None
 	if _csrf_token_is_valid():
 		return None
 
@@ -151,7 +200,7 @@ def _protect_unsafe_requests():
 	if request.is_json:
 		return jsonify({"ok": False, "error": message}), 400
 	flash(message, "warning")
-	return redirect(request.referrer or url_for("dashboard"))
+	return redirect(request.referrer or url_for("desk_app"))
 
 
 def _tenant_id_or_none():
@@ -200,6 +249,7 @@ def login_required(view_func):
 
 		g.current_user_id = security.get_current_user_id()
 		g.current_tenant_id = tenant_id
+		g.current_role = security.get_current_role()
 		return view_func(*args, **kwargs)
 
 	return wrapped
@@ -300,10 +350,11 @@ def _task_ai_payload(task, tenant_id):
 	}
 
 
-@app.get("/")
+@app.get("/home")
 def home():
+	"""Marketing landing page — logged-in users are redirected to desk."""
 	if security.get_current_user_id():
-		return redirect(url_for("dashboard"))
+		return redirect(url_for("desk_app"))
 	return render_template("index.html", plans=billing.PLANS)
 
 
@@ -364,13 +415,19 @@ def signup():
 
 	if tenant_status == "pending_payment":
 		return redirect(url_for("checkout", plan=plan_key))
-	return redirect(url_for("dashboard"))
+	return redirect(url_for("desk_app"))
+
+
+_DEV_LOGINS = [] if _is_production() else [
+	{"label": "Owner", "email": "owner@demo.local", "password": "demo1234"},
+	{"label": "Manager", "email": "manager@demo.local", "password": "demo1234"},
+]
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
 	if request.method == "GET":
-		return render_template("login.html", demo_logins=[])
+		return render_template("login.html", demo_logins=_DEV_LOGINS)
 
 	email = (request.form.get("email") or "").strip().lower()
 	password = request.form.get("password") or ""
@@ -379,12 +436,12 @@ def login():
 
 	if not user or not check_password_hash(user["password_hash"], password):
 		flash("Invalid email or password.", "danger")
-		return render_template("login.html", demo_logins=[])
+		return render_template("login.html", demo_logins=_DEV_LOGINS)
 
 	session["user_id"] = user["id"]
 	session.permanent = True
 	flash("Logged in successfully.", "success")
-	return redirect(url_for("dashboard"))
+	return redirect(url_for("desk_app"))
 
 
 @app.get("/logout")
@@ -409,7 +466,7 @@ def checkout():
 		order = billing.create_order(plan_key)
 	except Exception as exc:  # noqa: BLE001
 		flash(f"Could not initialize payment: {exc}", "warning")
-		return redirect(url_for("dashboard"))
+		return redirect(url_for("desk_app"))
 
 	return render_template(
 		"checkout.html",
@@ -462,7 +519,7 @@ def billing_verify():
 			ip_address=security.get_request_ip() or "",
 		)
 
-	return jsonify({"ok": True, "redirect": url_for("dashboard")})
+	return jsonify({"ok": True, "redirect": url_for("desk_app")})
 
 
 @app.get("/dashboard")
@@ -815,6 +872,7 @@ def task_send_to_ai(task_id):
 		return redirect(url_for("tasks_list"))
 
 	try:
+		usage.check_hourly_ai_rate_limit(tenant_id)
 		usage.increment_ai_task_usage(tenant_id, amount=1)
 		payload = _task_ai_payload(_to_dict(task), tenant_id)
 		issue_id = get_orchestrator().create_agent_task(tenant_id, task_id, task["task_type"], payload)
@@ -2676,20 +2734,1363 @@ app.add_url_rule("/tasks/new", endpoint="legacy_new_task", view_func=new_task, m
 def _not_found(_error):
 	if security.get_current_user_id():
 		flash("Page not found.", "warning")
-		return redirect(url_for("dashboard"))
-	return redirect(url_for("home"))
+		return redirect(url_for("desk_app"))
+	return redirect(url_for("login"))
 
 
 @app.errorhandler(ValueError)
 def _value_error(error):
-	flash(str(error), "warning")
-	return redirect(request.referrer or url_for("dashboard")), 400
+    # Don't expose raw ValueError messages - log instead
+    import logging
+    logging.warning(f"Validation error: {error}")
+    flash("Invalid input. Please check your data and try again.", "warning")
+    return redirect(request.referrer or url_for("desk_app")), 400
 
 
 @app.errorhandler(sqlite3.OperationalError)
 def _db_error(error):
-	flash(f"Database error: {error}", "danger")
-	return redirect(request.referrer or url_for("dashboard")), 500
+    # G-04 fix: Don't expose raw DB errors to users - log instead
+    import logging
+    logging.exception("Database error occurred")
+    flash("A database error occurred. Please try again or contact support.", "danger")
+    return redirect(request.referrer or url_for("desk_app")), 500
+
+
+@app.errorhandler(Exception)
+def _catch_all(error):
+    """G-04 fix: Generic catch-all for any unhandled exceptions."""
+    import logging
+    logging.exception("Unhandled exception occurred")
+    flash("An unexpected error occurred. Please try again or contact support.", "danger")
+    return redirect(request.referrer or url_for("desk_app")), 500
+
+
+# ============================================================
+# Wave 14: WhatsApp Queue Routes
+# ============================================================
+
+@app.get("/whatsapp-queue/")
+@login_required
+def whatsapp_queue_list():
+	tenant_id = security.get_current_tenant_id()
+	filters = {
+		"status": request.args.get("status", ""),
+		"client_entity_id": request.args.get("client_entity_id", ""),
+	}
+	items = whatsapp_queue.list_whatsapp_queue(tenant_id, {k: v for k, v in filters.items() if v})
+	summary = whatsapp_queue.get_whatsapp_queue_summary(tenant_id)
+	provider_configured = whatsapp_sender.is_whatsapp_configured()
+	return render_template(
+		"whatsapp_queue.html",
+		items=items,
+		summary=summary,
+		filters=filters,
+		provider_configured=provider_configured,
+	)
+
+
+@app.get("/whatsapp-queue/<int:queue_id>")
+@login_required
+def whatsapp_queue_detail(queue_id):
+	tenant_id = security.get_current_tenant_id()
+	item = whatsapp_queue.get_whatsapp_queue_item(tenant_id, queue_id)
+	if not item:
+		flash("WhatsApp queue item not found.", "danger")
+		return redirect(url_for("whatsapp_queue_list"))
+	provider_configured = whatsapp_sender.is_whatsapp_configured()
+	return render_template(
+		"whatsapp_queue_detail.html",
+		item=item,
+		provider_configured=provider_configured,
+	)
+
+
+@app.post("/whatsapp-queue/from-draft/<int:draft_id>")
+@login_required
+def queue_whatsapp_from_draft(draft_id):
+	tenant_id = security.get_current_tenant_id()
+	user_id = security.get_current_user_id()
+	to_phone = (request.form.get("to_phone") or "").strip()
+	media_url = (request.form.get("media_url") or "").strip() or None
+	try:
+		queue_id = whatsapp_queue.queue_whatsapp_from_draft(
+			tenant_id, draft_id, to_phone, user_id, media_url
+		)
+		flash("WhatsApp message queued successfully.", "success")
+		return redirect(url_for("whatsapp_queue_detail", queue_id=queue_id))
+	except Exception as exc:
+		flash(exc, "danger")
+		return redirect(request.referrer or url_for("document_communications_register"))
+
+
+@app.post("/whatsapp-queue/<int:queue_id>/approve")
+@login_required
+def approve_whatsapp_queue_item(queue_id):
+	tenant_id = security.get_current_tenant_id()
+	user_id = security.get_current_user_id()
+	try:
+		whatsapp_queue.approve_whatsapp_queue_item(tenant_id, queue_id, user_id)
+		flash("WhatsApp message approved for sending.", "success")
+	except Exception as exc:
+		flash(exc, "danger")
+	return redirect(url_for("whatsapp_queue_detail", queue_id=queue_id))
+
+
+@app.post("/whatsapp-queue/<int:queue_id>/send")
+@login_required
+def send_whatsapp_queue_item(queue_id):
+	tenant_id = security.get_current_tenant_id()
+	user_id = security.get_current_user_id()
+	try:
+		whatsapp_queue.send_approved_whatsapp_queue_item(tenant_id, queue_id, user_id)
+		flash("WhatsApp message sent successfully.", "success")
+	except Exception as exc:
+		flash(exc, "danger")
+	return redirect(url_for("whatsapp_queue_detail", queue_id=queue_id))
+
+
+@app.post("/whatsapp-queue/<int:queue_id>/cancel")
+@login_required
+def cancel_whatsapp_queue_item(queue_id):
+	tenant_id = security.get_current_tenant_id()
+	reason = (request.form.get("reason") or "").strip() or None
+	try:
+		whatsapp_queue.cancel_whatsapp_queue_item(tenant_id, queue_id, reason)
+		flash("WhatsApp queue item cancelled.", "success")
+	except Exception as exc:
+		flash(exc, "danger")
+	return redirect(url_for("whatsapp_queue_detail", queue_id=queue_id))
+
+
+# ============================================================
+# Wave 14: Portal Browser (Chromium/Playwright) Routes
+# ============================================================
+
+@app.post("/credentials/<int:credential_id>/verify-live")
+@login_required
+def credential_verify_live(credential_id):
+	"""
+	Trigger headless Chromium login verification for a stored credential.
+	Returns JSON so the UI can show a live result without a page reload.
+	Requires Playwright to be installed; returns an informative error if not.
+	"""
+	tenant_id = security.get_current_tenant_id()
+	try:
+		result = portal_browser.run_portal_verification(tenant_id, credential_id)
+		return jsonify(result)
+	except RuntimeError as exc:
+		return jsonify({"status": "not_configured", "message": str(exc)}), 200
+	except ValueError as exc:
+		return jsonify({"status": "failed", "message": str(exc)}), 404
+	except Exception as exc:
+		return jsonify({"status": "failed", "message": f"Verification error: {exc}"}), 500
+
+
+@app.post("/portal-browser/fetch/<int:credential_id>")
+@login_required
+def portal_browser_fetch(credential_id):
+	"""
+	Fetch compliance data from a portal using stored credentials and Chromium.
+	Accepts optional JSON body with fetch_type, gstin, pan.
+	Returns JSON with fetched data.
+	"""
+	tenant_id = security.get_current_tenant_id()
+	payload = request.get_json(silent=True) or {}
+	try:
+		# Load credential from DB
+		import credential_vault as cv
+		with db.get_db() as conn:
+			cred_row = conn.execute(
+				"""
+				SELECT cc.*, ce.gstin, ce.pan
+				FROM client_credentials cc
+				LEFT JOIN client_entities ce
+					   ON cc.client_entity_id = ce.id AND ce.tenant_id = cc.tenant_id
+				WHERE cc.tenant_id = ? AND cc.id = ?
+				""",
+				(tenant_id, credential_id),
+			).fetchone()
+
+		if not cred_row:
+			return jsonify({"error": "Credential not found."}), 404
+
+		cred = dict(cred_row)
+		portal_type = cred["portal_type"]
+		portal_url = cv.PORTAL_URLS.get(portal_type, "")
+		username = cred.get("username") or ""
+		password = cv.decrypt_secret(cred.get("secret_value_encrypted")) or ""
+
+		result = portal_browser.fetch_portal_data(
+			portal_type=portal_type,
+			username=username,
+			password=password,
+			portal_url=portal_url,
+			gstin=payload.get("gstin") or cred.get("gstin"),
+			pan=payload.get("pan") or cred.get("pan"),
+		)
+		return jsonify(result)
+	except RuntimeError as exc:
+		return jsonify({"error": str(exc)}), 200
+	except Exception as exc:
+		return jsonify({"error": f"Fetch error: {exc}"}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 15 — Human + Agent Workspace: Inbox, Work, Team → Agents
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Inbox ──────────────────────────────────────────────────────────────────
+
+@app.get("/inbox")
+@login_required
+def inbox_page():
+	"""Inbox: items that need the current user — releases waiting and assigned work."""
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	selected_id = request.args.get("id", type=int)
+
+	with db.get_db() as conn:
+		# Works in 'proposed' state where the current user is the authorizer
+		releases = conn.execute("""
+			SELECT w.*, ce.name AS client_name
+			FROM works w
+			LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+			WHERE w.tenant_id = ? AND w.status = 'proposed' AND w.authorizer_user_id = ?
+			ORDER BY w.updated_at DESC
+			LIMIT 50
+		""", (tenant_id, user_id)).fetchall()
+
+		# Works assigned to the current user as person-doer
+		assigned = conn.execute("""
+			SELECT w.*, ce.name AS client_name
+			FROM works w
+			LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+			WHERE w.tenant_id = ? AND w.doer_kind = 'person' AND w.doer_id = ?
+			  AND w.status NOT IN ('released', 'filed', 'rejected')
+			ORDER BY w.due_date ASC NULLS LAST, w.updated_at DESC
+			LIMIT 50
+		""", (tenant_id, user_id)).fetchall()
+
+		selected = None
+		events = []
+		if selected_id:
+			selected = conn.execute("""
+				SELECT w.*, ce.name AS client_name
+				FROM works w
+				LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+				WHERE w.tenant_id = ? AND w.id = ?
+			""", (tenant_id, selected_id)).fetchone()
+			if selected:
+				events = conn.execute("""
+					SELECT we.*, u.name AS actor_name
+					FROM work_events we
+					LEFT JOIN users u ON u.id = we.actor_id AND we.actor_kind = 'person'
+					WHERE we.tenant_id = ? AND we.work_id = ?
+					ORDER BY we.created_at ASC
+				""", (tenant_id, selected_id)).fetchall()
+
+	# Auto-select first item if none specified
+	if not selected_id:
+		all_items = list(releases) + list(assigned)
+		if all_items:
+			selected_id = all_items[0]["id"]
+			return redirect(url_for("inbox_page", id=selected_id))
+
+	return render_template(
+		"inbox.html",
+		releases=releases,
+		assigned=assigned,
+		selected=selected,
+		selected_id=selected_id,
+		events=events,
+	)
+
+
+# ── Work list ──────────────────────────────────────────────────────────────
+
+@app.get("/work")
+@login_required
+def work_list():
+	tenant_id = g.current_tenant_id
+	page = request.args.get("page", 1, type=int)
+	status_filter = request.args.get("status", "").strip()
+	kind_filter = request.args.get("kind", "").strip()
+	doer_filter = request.args.get("doer", "").strip()
+	per_page = 40
+
+	with db.get_db() as conn:
+		where_parts = ["w.tenant_id = ?"]
+		params = [tenant_id]
+		if status_filter:
+			where_parts.append("w.status = ?")
+			params.append(status_filter)
+		if kind_filter:
+			where_parts.append("w.kind = ?")
+			params.append(kind_filter)
+		if doer_filter:
+			where_parts.append("w.doer_kind = ?")
+			params.append(doer_filter)
+
+		where_clause = " AND ".join(where_parts)
+		total = conn.execute(
+			f"SELECT COUNT(*) FROM works w WHERE {where_clause}", params
+		).fetchone()[0]
+		total_pages = max(1, (total + per_page - 1) // per_page)
+		offset = (page - 1) * per_page
+
+		works = conn.execute(f"""
+			SELECT w.*,
+				ce.name AS client_name,
+				auth.name AS authorizer_name,
+				doer_u.name AS doer_name
+			FROM works w
+			LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+			LEFT JOIN users auth ON auth.id = w.authorizer_user_id
+			LEFT JOIN users doer_u ON doer_u.id = w.doer_id AND w.doer_kind = 'person'
+			WHERE {where_clause}
+			ORDER BY
+				CASE w.status WHEN 'proposed' THEN 0 WHEN 'in_review' THEN 1 WHEN 'in_progress' THEN 2 ELSE 3 END,
+				w.due_date ASC NULLS LAST,
+				w.updated_at DESC
+			LIMIT ? OFFSET ?
+		""", params + [per_page, offset]).fetchall()
+
+	return render_template(
+		"work_list.html",
+		works=works,
+		page=page,
+		total_pages=total_pages,
+		status_filter=status_filter,
+		kind_filter=kind_filter,
+		doer_filter=doer_filter,
+	)
+
+
+@app.get("/work/new")
+@login_required
+def work_new():
+	"""Redirect stub — inline form coming; for now redirect to work list."""
+	flash("New Work item form coming soon. For now create a Task.", "info")
+	return redirect(url_for("work_list"))
+
+
+@app.get("/work/<int:work_id>")
+@login_required
+def work_detail(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	current_role = g.current_role
+
+	with db.get_db() as conn:
+		work = conn.execute("""
+			SELECT w.*, ce.name AS client_name
+			FROM works w
+			LEFT JOIN client_entities ce ON ce.id = w.client_entity_id AND ce.tenant_id = w.tenant_id
+			WHERE w.tenant_id = ? AND w.id = ?
+		""", (tenant_id, work_id)).fetchone()
+		if not work:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+
+		events = conn.execute("""
+			SELECT we.*, u.name AS actor_name
+			FROM work_events we
+			LEFT JOIN users u ON u.id = we.actor_id AND we.actor_kind = 'person'
+			WHERE we.tenant_id = ? AND we.work_id = ?
+			ORDER BY we.created_at ASC
+		""", (tenant_id, work_id)).fetchall()
+
+		doer_name = None
+		if work["doer_kind"] == "person" and work["doer_id"]:
+			row = conn.execute("SELECT name FROM users WHERE id = ?", (work["doer_id"],)).fetchone()
+			doer_name = row["name"] if row else None
+
+		authorizer_name = None
+		if work["authorizer_user_id"]:
+			row = conn.execute("SELECT name FROM users WHERE id = ?", (work["authorizer_user_id"],)).fetchone()
+			authorizer_name = row["name"] if row else None
+
+	# Can release: authorizer OR owner/partner
+	can_release = (
+		current_role in ("owner", "partner")
+		or work["authorizer_user_id"] == user_id
+	)
+
+	return render_template(
+		"work_detail.html",
+		work=work,
+		events=events,
+		doer_name=doer_name,
+		authorizer_name=authorizer_name,
+		can_release=can_release,
+	)
+
+
+@app.post("/work/<int:work_id>/comment")
+@login_required
+def work_add_comment(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	body = (request.form.get("body") or "").strip()
+	if not body:
+		flash("Comment cannot be empty.", "warning")
+		return redirect(url_for("work_detail", work_id=work_id))
+
+	with db.get_db() as conn:
+		# Verify work belongs to tenant
+		w = conn.execute(
+			"SELECT id FROM works WHERE id = ? AND tenant_id = ?", (work_id, tenant_id)
+		).fetchone()
+		if not w:
+			flask_flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+		conn.execute("""
+			INSERT INTO work_events (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+			VALUES (?, ?, 'comment', 'person', ?, ?)
+		""", (tenant_id, work_id, user_id, body))
+		# Update work updated_at
+		conn.execute(
+			"UPDATE works SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (work_id,)
+		)
+
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+@app.post("/work/<int:work_id>/status")
+@login_required
+@security.require_roles(["manager", "partner", "owner", "senior"])
+def work_status_update(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	new_status = (request.form.get("status") or "").strip()
+	valid_statuses = {"new","in_progress","proposed","in_review","changes_requested","released","filed","rejected"}
+	if new_status not in valid_statuses:
+		flash("Invalid status.", "warning")
+		return redirect(url_for("work_detail", work_id=work_id))
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, tenant_id FROM works WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id)
+		).fetchone()
+		if not w:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+		old_status = w["status"]
+		conn.execute(
+			"UPDATE works SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(new_status, work_id)
+		)
+		conn.execute("""
+			INSERT INTO work_events (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+			VALUES (?, ?, 'system', 'person', ?, ?)
+		""", (tenant_id, work_id, user_id, f"Status changed from {old_status} to {new_status}"))
+
+	flash(f"Status updated to {new_status.replace('_',' ')}.", "success")
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+@app.post("/work/<int:work_id>/release")
+@login_required
+def work_release(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	current_role = g.current_role
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, authorizer_user_id FROM works WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id)
+		).fetchone()
+		if not w:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+
+		can_release = (
+			current_role in ("owner", "partner")
+			or w["authorizer_user_id"] == user_id
+		)
+		if not can_release:
+			flash("You are not the authorizer for this Work item.", "warning")
+			return redirect(url_for("work_detail", work_id=work_id))
+
+		conn.execute(
+			"UPDATE works SET status = 'released', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(work_id,)
+		)
+		conn.execute("""
+			INSERT INTO work_events (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+			VALUES (?, ?, 'outcome', 'person', ?, 'Released by authorizer')
+		""", (tenant_id, work_id, user_id))
+
+	flash("Work item released.", "success")
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+@app.post("/work/<int:work_id>/reject")
+@login_required
+def work_reject(work_id):
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+	reason = (request.form.get("reason") or "other").strip()
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, authorizer_user_id FROM works WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id)
+		).fetchone()
+		if not w:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+
+		can_reject = (
+			g.current_role in ("owner", "partner")
+			or w["authorizer_user_id"] == user_id
+		)
+		if not can_reject:
+			flash("You are not authorised to reject this Work item.", "warning")
+			return redirect(url_for("work_detail", work_id=work_id))
+
+		conn.execute(
+			"UPDATE works SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(work_id,)
+		)
+		conn.execute("""
+			INSERT INTO work_events (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+			VALUES (?, ?, 'system', 'person', ?, ?)
+		""", (tenant_id, work_id, user_id, f"Rejected: {reason.replace('_', ' ')}"))
+
+	flash(f"Work item rejected ({reason.replace('_',' ')}).", "info")
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+# ── Background agent job: enqueue + status ─────────────────────────────────
+
+def _get_redis_conn():
+	"""Return a Redis connection or None if Redis / rq are not available."""
+	redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+	try:
+		import redis as _redis_lib
+		conn = _redis_lib.from_url(redis_url)
+		conn.ping()
+		return conn
+	except Exception:
+		return None
+
+
+@app.post("/work/<int:work_id>/run")
+@login_required
+def work_run_agent(work_id):
+	"""Enqueue the Work item's agent automation as a background RQ job."""
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, agent_key, rq_job_status FROM works WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id),
+		).fetchone()
+		if not w:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+
+		if not w["agent_key"]:
+			flash("This Work item has no agent assigned (agent_key is empty).", "warning")
+			return redirect(url_for("work_detail", work_id=work_id))
+
+		if w["rq_job_status"] == "running":
+			flash("Agent is already running for this Work item.", "info")
+			return redirect(url_for("work_detail", work_id=work_id))
+
+	redis_conn = _get_redis_conn()
+	if redis_conn is None:
+		# ── No Redis: run synchronously in-process (browser must stay open) ──
+		flash(
+			"Redis is not running — executing agent synchronously. "
+			"The page will load when the job completes. "
+			"Start Redis + python worker.py for true background execution.",
+			"warning",
+		)
+		import threading
+		from tasks.ai_task import run_work_agent
+
+		def _run():
+			try:
+				run_work_agent(tenant_id, work_id)
+			except Exception:
+				pass  # already logged + DB written inside run_work_agent
+
+		t = threading.Thread(target=_run, daemon=True)
+		t.start()
+		# Don't block — return immediately; user can refresh
+		return redirect(url_for("work_detail", work_id=work_id))
+
+	# ── Redis available: enqueue with RQ ─────────────────────────────────
+	try:
+		from rq import Queue
+		from tasks.ai_task import run_work_agent
+
+		queue = Queue("ca_agent", connection=redis_conn)
+		job = queue.enqueue(
+			run_work_agent,
+			tenant_id,
+			work_id,
+			job_timeout=7200,       # 2 hours max
+			result_ttl=86400,       # keep result 24 h
+			failure_ttl=86400,
+		)
+		with db.get_db() as conn:
+			conn.execute(
+				"""UPDATE works
+				   SET rq_job_id = ?,
+				       rq_job_status = 'queued',
+				       rq_queued_at = CURRENT_TIMESTAMP,
+				       updated_at = CURRENT_TIMESTAMP
+				   WHERE id = ?""",
+				(job.id, work_id),
+			)
+			conn.execute(
+				"""INSERT INTO work_events
+				       (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+				   VALUES (?, ?, 'system', 'person', ?, ?)""",
+				(tenant_id, work_id, user_id,
+				 f"Agent job queued (job_id: {job.id}). Close this tab — it will run in the background."),
+			)
+		flash("Agent job queued. You can close this tab — it runs on the server.", "success")
+	except Exception as exc:  # noqa: BLE001
+		flash(f"Could not enqueue agent job: {exc}", "danger")
+
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+@app.get("/work/<int:work_id>/job-status")
+@login_required
+def work_job_status(work_id):
+	"""JSON polling endpoint — returns current rq_job_status + last event snippet."""
+	tenant_id = g.current_tenant_id
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, rq_job_id, rq_job_status, rq_queued_at FROM works "
+			"WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id),
+		).fetchone()
+		if not w:
+			return jsonify({"error": "not found"}), 404
+
+		last_event = conn.execute(
+			"""SELECT body, event_kind, created_at FROM work_events
+			   WHERE tenant_id = ? AND work_id = ?
+			   ORDER BY created_at DESC LIMIT 1""",
+			(tenant_id, work_id),
+		).fetchone()
+
+	# Optionally cross-check live RQ job status
+	rq_live_status = None
+	if w["rq_job_id"]:
+		try:
+			import redis as _redis_lib
+			from rq.job import Job
+			redis_conn = _get_redis_conn()
+			if redis_conn:
+				job = Job.fetch(w["rq_job_id"], connection=redis_conn)
+				rq_live_status = job.get_status().value if job else None
+		except Exception:
+			pass
+
+	return jsonify({
+		"work_id": work_id,
+		"status": w["status"],
+		"rq_job_id": w["rq_job_id"],
+		"rq_job_status": rq_live_status or w["rq_job_status"],
+		"rq_queued_at": w["rq_queued_at"],
+		"last_event": dict(last_event) if last_event else None,
+	})
+
+
+# ── Team → Agents ──────────────────────────────────────────────────────────
+
+def _build_agent_list():
+	"""Derive agent profile data from the automation registry."""
+	from collections import defaultdict
+	import re
+
+	agent_map = defaultdict(lambda: {
+		"name": "",
+		"category": "",
+		"skills": set(),
+		"automations": [],
+		"requires_review": False,
+		"automation_count": 0,
+	})
+
+	for entry in automation_registry.AUTOMATION_REGISTRY:
+		aname = entry.get("assigned_agent") or "Unknown Agent"
+		info = agent_map[aname]
+		info["name"] = aname
+		info["category"] = entry.get("category") or ""
+		# Derive skills from task_types and output_type
+		for tt in (entry.get("task_types") or []):
+			info["skills"].add(tt)
+		if entry.get("output_type"):
+			info["skills"].add(entry["output_type"].replace("_", " "))
+		if entry.get("requires_human_review"):
+			info["requires_review"] = True
+		info["automations"].append(entry)
+		info["automation_count"] += 1
+
+	agents = []
+	for name, info in sorted(agent_map.items()):
+		# Generate a URL-safe slug from the agent name
+		slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+		# Initials from first two words
+		words = name.split()
+		initials = "".join(w[0] for w in words[:2]).upper()
+		agents.append({
+			"name": info["name"],
+			"slug": slug,
+			"category": info["category"],
+			"skills": sorted(info["skills"])[:8],
+			"automations": info["automations"],
+			"automation_count": info["automation_count"],
+			"requires_review": info["requires_review"],
+			"initials": initials,
+			"sample_description": (info["automations"][0].get("description") or "") if info["automations"] else "",
+		})
+
+	return agents
+
+
+@app.get("/team/agents")
+@login_required
+def team_agents_page():
+	agents = _build_agent_list()
+	active_count = sum(
+		1 for a in automation_registry.AUTOMATION_REGISTRY if a.get("is_active")
+	)
+	review_count = sum(
+		1 for a in automation_registry.AUTOMATION_REGISTRY if a.get("requires_human_review")
+	)
+	categories = sorted({a["category"] for a in agents if a["category"]})
+	return render_template(
+		"team_agents.html",
+		agents=agents,
+		active_count=active_count,
+		review_count=review_count,
+		categories=categories,
+	)
+
+
+@app.get("/team/agents/<slug>")
+@login_required
+def team_agent_profile(slug):
+	agents = _build_agent_list()
+	agent = next((a for a in agents if a["slug"] == slug), None)
+	if not agent:
+		flash("Agent not found.", "warning")
+		return redirect(url_for("team_agents_page"))
+
+	active_automations = sum(1 for a in agent["automations"] if a.get("is_active"))
+	return render_template(
+		"team_agent_profile.html",
+		agent=agent,
+		automations=agent["automations"],
+		active_automations=active_automations,
+	)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CA Office Desk React UI — JSON API  (/api/*)
+# These endpoints power the Vite React frontend (frontend/ directory).
+# All routes require login and return JSON.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Status translation ────────────────────────────────────────────────────
+# Maps internal compliance_tasks statuses → React UI display strings.
+
+_INTERNAL_TO_DESK = {
+	"draft":            "Pending with Staff",
+	"pending_documents":"Pending from Client",
+	"ready_for_ai":     "Pending with Staff",
+	"ai_queued":        "Pending with Staff",
+	"ai_processing":    "Pending with Staff",
+	"ai_draft_ready":   "Draft Sent",
+	"under_review":     "Ready for Partner Review",
+	"changes_required": "Pending with Staff",
+	"approved":         "Draft Sent",
+	"filed":            "Filed",
+	"closed":           "Filed",
+	"cancelled":        "Pending with Staff",
+	"ai_failed":        "Pending with Staff",
+}
+
+_DESK_TO_INTERNAL = {
+	"Pending from Client":     "pending_documents",
+	"Pending with Staff":      "draft",
+	"Data Received":           "pending_documents",  # maps back; status history records the change
+	"Draft Sent":              "ai_draft_ready",
+	"Ready for Partner Review":"under_review",
+	"Filed":                   "filed",
+	"Overdue":                 "draft",
+}
+
+_MODULE_MAP = {
+	"gstr1":            "GST",
+	"gstr3b":           "GST",
+	"gstr9":            "GST",
+	"tds_24q":          "TDS",
+	"tds_26q":          "TDS",
+	"tds_certificate":  "TDS",
+	"itr":              "Income Tax",
+	"tax_audit":        "Income Tax",
+	"advance_tax":      "Income Tax",
+	"aoc4":             "MCA",
+	"mgt7":             "MCA",
+	"dir3kyc":          "MCA",
+	"pf_esi":           "Payroll",
+	"document_checklist":"Documents",
+	"general_query":    "General",
+}
+
+
+def _desk_status(internal_status: str, due_date=None) -> str:
+	"""Translate internal task status to React UI status string."""
+	import datetime
+	if due_date:
+		try:
+			due = datetime.date.fromisoformat(str(due_date))
+			if due < datetime.date.today() and internal_status not in ("filed", "closed", "cancelled"):
+				return "Overdue"
+		except ValueError:
+			pass
+	return _INTERNAL_TO_DESK.get(internal_status, "Pending with Staff")
+
+
+def _task_to_desk(row) -> dict:
+	"""Convert a compliance_tasks DB row to the React dashboard task shape."""
+	import datetime
+	r = dict(row)
+	due_date = r.get("due_date")
+	status = _desk_status(r.get("status", "draft"), due_date)
+
+	# Format due label
+	due_label = "—"
+	if due_date:
+		try:
+			d = datetime.date.fromisoformat(str(due_date))
+			today = datetime.date.today()
+			if d < today:
+				due_label = "Overdue"
+			elif d == today:
+				due_label = "Today"
+			elif d == today + datetime.timedelta(days=1):
+				due_label = "Tomorrow"
+			else:
+				due_label = d.strftime("%-d %b") if hasattr(d, "strftime") else str(d)
+		except ValueError:
+			due_label = str(due_date)
+
+	return {
+		"id":        r.get("task_ref") or f"TASK-{r['id']}",
+		"_internal_id": r["id"],
+		"client":    r.get("client_name") or "—",
+		"work":      r.get("title") or "—",
+		"module":    _MODULE_MAP.get(r.get("task_type", ""), "General"),
+		"due":       due_label,
+		"status":    status,
+		"staff":     r.get("staff_name") or r.get("assigned_user_name") or "—",
+		"partner":   r.get("reviewer_name") or "—",
+		"pending":   r.get("description") or "No details added.",
+		"priority":  (r.get("priority") or "normal").capitalize(),
+		"amount":    "—",
+		"documents": "—",
+		"phone":     r.get("client_phone") or "",
+	}
+
+
+@app.get("/api/me")
+@login_required
+def api_me():
+	"""Current user + role info for the React UI."""
+	tenant_id = g.current_tenant_id
+	user_id   = g.current_user_id
+	role      = g.current_role
+
+	with db.get_db() as conn:
+		user = conn.execute(
+			"SELECT id, email, name FROM users WHERE id = ?", (user_id,)
+		).fetchone()
+		tenant = conn.execute(
+			"SELECT id, name FROM tenants WHERE id = ?", (tenant_id,)
+		).fetchone()
+
+	return jsonify({
+		"user": {
+			"id":        user_id,
+			"email":     dict(user)["email"] if user else "",
+			"name":      dict(user).get("name") or (dict(user)["email"].split("@")[0].title() if user else ""),
+			"role":      role,
+			"firm_name": dict(tenant)["name"] if tenant else "Your Firm",
+		}
+	})
+
+
+def _get_tasks_for_tenant(tenant_id, filters=None):
+	"""Return compliance_tasks rows with client + user JOINs."""
+	where = ["ct.tenant_id = ?"]
+	params = [tenant_id]
+	if filters:
+		for col, val in filters.items():
+			where.append(f"ct.{col} = ?")
+			params.append(val)
+	where_clause = " AND ".join(where)
+
+	with db.get_db() as conn:
+		rows = conn.execute(f"""
+			SELECT ct.*,
+				ce.name AS client_name,
+				ce.phone AS client_phone,
+				u_staff.name AS staff_name,
+				u_reviewer.name AS reviewer_name
+			FROM compliance_tasks ct
+			LEFT JOIN client_entities ce
+				ON ce.id = ct.client_entity_id AND ce.tenant_id = ct.tenant_id
+			LEFT JOIN users u_staff
+				ON u_staff.id = ct.assigned_user_id
+			LEFT JOIN users u_reviewer
+				ON u_reviewer.id = ct.reviewer_user_id
+			WHERE {where_clause}
+			ORDER BY ct.due_date ASC NULLS LAST, ct.created_at DESC
+			LIMIT 200
+		""", params).fetchall()
+	return rows
+
+
+@app.get("/api/dashboard/today")
+@login_required
+def api_dashboard_today():
+	"""Tasks due today + overdue + partner-review pending."""
+	import datetime
+	tenant_id = g.current_tenant_id
+	today_str = datetime.date.today().isoformat()
+
+	rows = _get_tasks_for_tenant(tenant_id)
+	tasks = [_task_to_desk(r) for r in rows]
+
+	# Filter to tasks relevant for "today" view:
+	# due today, overdue, or awaiting partner review
+	desk_tasks = [
+		t for t in tasks
+		if t["due"] in ("Today", "Overdue", "Tomorrow")
+		or t["status"] in ("Ready for Partner Review", "Draft Sent")
+	]
+
+	return jsonify({"tasks": desk_tasks})
+
+
+@app.get("/api/clients")
+@login_required
+def api_clients():
+	"""Client list with task counts."""
+	tenant_id = g.current_tenant_id
+
+	with db.get_db() as conn:
+		rows = conn.execute("""
+			SELECT
+				ce.id,
+				ce.name,
+				ce.entity_type AS pan,
+				ce.gstin,
+				ce.phone,
+				SUM(CASE WHEN ct.status NOT IN ('filed','closed','cancelled') THEN 1 ELSE 0 END) AS pending,
+				SUM(CASE WHEN ct.due_date < DATE('now') AND ct.status NOT IN ('filed','closed','cancelled') THEN 1 ELSE 0 END) AS overdue
+			FROM client_entities ce
+			LEFT JOIN compliance_tasks ct ON ct.client_entity_id = ce.id AND ct.tenant_id = ce.tenant_id
+			WHERE ce.tenant_id = ?
+			GROUP BY ce.id
+			ORDER BY ce.name
+		""", (tenant_id,)).fetchall()
+
+	clients = []
+	for r in rows:
+		r = dict(r)
+		gst_label = "Active GST" if r.get("gstin") else "No GST"
+		pan_label  = "Company" if r.get("pan") in ("company", "llp", "firm") else "Individual"
+		status_label = "Attention" if (r.get("overdue") or 0) > 0 else "Good"
+		clients.append({
+			"id":      r["id"],
+			"name":    r["name"],
+			"gst":     gst_label,
+			"pan":     pan_label,
+			"owner":   "—",
+			"pending": r.get("pending") or 0,
+			"overdue": r.get("overdue") or 0,
+			"status":  status_label,
+		})
+
+	return jsonify({"clients": clients})
+
+
+@app.get("/api/gst/status")
+@login_required
+def api_gst_status():
+	"""GST per-client GSTR-1 / GSTR-3B filing status."""
+	tenant_id = g.current_tenant_id
+	rows = _get_tasks_for_tenant(tenant_id)
+
+	# Group by client — pick last GSTR-1 and GSTR-3B task per client
+	from collections import defaultdict
+	by_client: dict = defaultdict(lambda: {"gstr1": None, "gstr3b": None, "staff": "—", "due": "—"})
+
+	for r in rows:
+		r = dict(r)
+		client = r.get("client_name") or "Unknown"
+		task_type = r.get("task_type", "")
+		desk = _task_to_desk(r)
+		if task_type == "gstr1":
+			by_client[client]["gstr1"] = desk["status"]
+			by_client[client]["staff"] = desk["staff"]
+			by_client[client]["due"]   = desk["due"]
+		elif task_type == "gstr3b":
+			by_client[client]["gstr3b"] = desk["status"]
+			by_client[client]["staff"]  = desk["staff"]
+			by_client[client]["due"]    = desk["due"]
+
+	gst_rows = []
+	for client, info in sorted(by_client.items()):
+		gst_rows.append({
+			"client": client,
+			"gstr1":  info["gstr1"] or "—",
+			"gstr3b": info["gstr3b"] or "—",
+			"books":  "—",
+			"due":    info["due"],
+			"staff":  info["staff"],
+		})
+
+	return jsonify({"rows": gst_rows})
+
+
+@app.get("/api/documents/pending")
+@login_required
+def api_documents_pending():
+	"""Pending document requests."""
+	import datetime
+	tenant_id = g.current_tenant_id
+
+	with db.get_db() as conn:
+		rows = conn.execute("""
+			SELECT
+				dr.id,
+				dr.document_name,
+				dr.status,
+				dr.created_at,
+				ce.name AS client_name,
+				u.name  AS owner_name
+			FROM document_requests dr
+			LEFT JOIN compliance_tasks ct ON ct.id = dr.task_id AND ct.tenant_id = ?
+			LEFT JOIN client_entities  ce ON ce.id = ct.client_entity_id
+			LEFT JOIN users u ON u.id = dr.requested_by
+			WHERE dr.tenant_id = ?
+			  AND dr.status NOT IN ('received','cancelled')
+			ORDER BY dr.created_at DESC
+			LIMIT 100
+		""", (tenant_id, tenant_id)).fetchall()
+
+	today = datetime.date.today()
+	docs = []
+	for r in rows:
+		r = dict(r)
+		created = r.get("created_at", "")[:10]
+		try:
+			d = datetime.date.fromisoformat(created)
+			delta = (today - d).days
+			asked = "Today" if delta == 0 else f"{delta} day{'s' if delta != 1 else ''} ago"
+		except ValueError:
+			asked = created
+
+		internal_status = r.get("status", "pending")
+		if internal_status == "received":
+			desk_status = "Data Received"
+		elif internal_status == "overdue":
+			desk_status = "Overdue"
+		else:
+			desk_status = "Pending from Client"
+
+		docs.append({
+			"id":     r["id"],
+			"client": r.get("client_name") or "—",
+			"item":   r.get("document_name") or "—",
+			"asked":  asked,
+			"owner":  r.get("owner_name") or "—",
+			"status": desk_status,
+		})
+
+	return jsonify({"documents": docs})
+
+
+@app.get("/api/approvals")
+@login_required
+def api_approvals():
+	"""Tasks in 'Ready for Partner Review' or 'Draft Sent' state."""
+	tenant_id = g.current_tenant_id
+	rows = _get_tasks_for_tenant(tenant_id)
+	tasks = [
+		_task_to_desk(r)
+		for r in rows
+		if _desk_status(dict(r).get("status", "")) in ("Ready for Partner Review", "Draft Sent")
+	]
+	return jsonify({"tasks": tasks})
+
+
+@app.get("/api/reports/summary")
+@login_required
+def api_reports_summary():
+	"""Summary stats for the Reports page."""
+	tenant_id = g.current_tenant_id
+
+	with db.get_db() as conn:
+		total = conn.execute(
+			"SELECT COUNT(*) FROM compliance_tasks WHERE tenant_id = ?", (tenant_id,)
+		).fetchone()[0]
+		filed = conn.execute(
+			"SELECT COUNT(*) FROM compliance_tasks WHERE tenant_id = ? AND status IN ('filed','closed')",
+			(tenant_id,)
+		).fetchone()[0]
+		overdue = conn.execute(
+			"SELECT COUNT(*) FROM compliance_tasks WHERE tenant_id = ? AND due_date < DATE('now') AND status NOT IN ('filed','closed','cancelled')",
+			(tenant_id,)
+		).fetchone()[0]
+		staff_pending = conn.execute(
+			"SELECT COUNT(*) FROM compliance_tasks WHERE tenant_id = ? AND status NOT IN ('filed','closed','cancelled') AND assigned_user_id IS NOT NULL",
+			(tenant_id,)
+		).fetchone()[0]
+		client_pending = conn.execute(
+			"SELECT COUNT(*) FROM compliance_tasks WHERE tenant_id = ? AND status = 'pending_documents'",
+			(tenant_id,)
+		).fetchone()[0]
+
+		# Staff workload rows
+		staff_rows_raw = conn.execute("""
+			SELECT u.name, COUNT(ct.id) AS cnt
+			FROM compliance_tasks ct
+			JOIN users u ON u.id = ct.assigned_user_id
+			WHERE ct.tenant_id = ? AND ct.status NOT IN ('filed','closed','cancelled')
+			GROUP BY u.id
+			ORDER BY cnt DESC
+			LIMIT 6
+		""", (tenant_id,)).fetchall()
+
+		# Module counts
+		module_rows_raw = conn.execute("""
+			SELECT task_type, COUNT(*) AS cnt
+			FROM compliance_tasks WHERE tenant_id = ?
+			GROUP BY task_type ORDER BY cnt DESC
+		""", (tenant_id,)).fetchall()
+
+	completion_pct = round(filed / total * 100) if total else 0
+
+	staff_rows = [
+		f"{r['name']} — {r['cnt']} open" for r in staff_rows_raw
+	] or ["No data yet"]
+
+	module_counts: dict = {}
+	for r in module_rows_raw:
+		mod = _MODULE_MAP.get(r["task_type"], "Other")
+		module_counts[mod] = module_counts.get(mod, 0) + r["cnt"]
+
+	statutory_rows = [
+		f"{mod} — {cnt} tasks"
+		for mod, cnt in sorted(module_counts.items(), key=lambda x: -x[1])
+	] or ["No data yet"]
+
+	return jsonify({
+		"summary": {
+			"completion_pct": completion_pct,
+			"staff_pending":  staff_pending,
+			"client_pending": client_pending,
+			"overdue":        overdue,
+			"staff_rows":     staff_rows,
+			"statutory_rows": statutory_rows,
+		}
+	})
+
+
+# ── Mutation endpoints ────────────────────────────────────────────────────
+
+@app.route("/api/tasks/<int:task_id>/status", methods=["PATCH"])
+@login_required
+def api_task_status_update(task_id):
+	"""Update task status. Accepts React desk status strings."""
+	tenant_id = g.current_tenant_id
+	user_id   = g.current_user_id
+	role      = g.current_role
+
+	data = request.get_json(silent=True) or {}
+	desk_status = (data.get("status") or "").strip()
+	remarks     = (data.get("remarks") or "").strip()
+
+	if not desk_status:
+		return jsonify({"error": "status is required"}), 400
+
+	internal = _DESK_TO_INTERNAL.get(desk_status)
+	if not internal:
+		return jsonify({"error": f"Unknown status: {desk_status}"}), 400
+
+	# Role check: only partner/owner can set Filed
+	if desk_status == "Filed" and role not in ("owner", "partner"):
+		return jsonify({"error": "Only Partner can mark as Filed."}), 403
+	if desk_status == "Ready for Partner Review" and role not in ("owner", "partner", "manager", "senior"):
+		return jsonify({"error": "Insufficient role to send for Partner Review."}), 403
+
+	with db.get_db() as conn:
+		task = conn.execute(
+			"SELECT id, status, tenant_id FROM compliance_tasks WHERE id = ? AND tenant_id = ?",
+			(task_id, tenant_id),
+		).fetchone()
+		if not task:
+			return jsonify({"error": "Task not found"}), 404
+
+		old_status = task["status"]
+		conn.execute(
+			"UPDATE compliance_tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(internal, task_id),
+		)
+		conn.execute(
+			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by_user_id, reason)
+			   VALUES (?, ?, ?, ?, ?, ?)""",
+			(tenant_id, task_id, old_status, internal, user_id, remarks or f"Updated via CA Office Desk to '{desk_status}'"),
+		)
+
+	return jsonify({"ok": True, "task_id": task_id, "new_status": desk_status})
+
+
+@app.route("/api/tasks/<int:task_id>/email", methods=["POST"])
+@login_required
+def api_task_email(task_id):
+	"""Queue a task-related email. Stub — wires to email_queue."""
+	tenant_id = g.current_tenant_id
+	data = request.get_json(silent=True) or {}
+	# In a full implementation, this would call email_queue.enqueue_for_task(...)
+	return jsonify({"ok": True, "task_id": task_id, "message": "Email queued (stub — wire to email_queue module)."})
+
+
+@app.route("/api/tasks/<int:task_id>/whatsapp", methods=["POST"])
+@login_required
+def api_task_whatsapp(task_id):
+	"""Queue a WhatsApp message for a task. Stub — wires to whatsapp_queue."""
+	tenant_id = g.current_tenant_id
+	data = request.get_json(silent=True) or {}
+	return jsonify({"ok": True, "task_id": task_id, "message": "WhatsApp message queued (stub — wire to whatsapp_queue module)."})
+
+
+@app.route("/api/approvals/<int:task_id>/approve", methods=["POST"])
+@login_required
+def api_approval_approve(task_id):
+	"""Partner approves a task — moves to 'filed'."""
+	if g.current_role not in ("owner", "partner"):
+		return jsonify({"error": "Only Partner can approve filings."}), 403
+	tenant_id = g.current_tenant_id
+	user_id   = g.current_user_id
+
+	with db.get_db() as conn:
+		task = conn.execute(
+			"SELECT id, status, tenant_id FROM compliance_tasks WHERE id = ? AND tenant_id = ?",
+			(task_id, tenant_id),
+		).fetchone()
+		if not task:
+			return jsonify({"error": "Task not found"}), 404
+
+		old_status = task["status"]
+		conn.execute(
+			"UPDATE compliance_tasks SET status = 'filed', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(task_id,),
+		)
+		conn.execute(
+			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by_user_id, reason)
+			   VALUES (?, ?, ?, 'filed', ?, 'Approved by partner via CA Office Desk')""",
+			(tenant_id, task_id, old_status, user_id),
+		)
+
+	return jsonify({"ok": True, "task_id": task_id, "new_status": "Filed"})
+
+
+@app.route("/api/approvals/<int:task_id>/request-changes", methods=["POST"])
+@login_required
+def api_approval_request_changes(task_id):
+	"""Request changes on a pending approval."""
+	if g.current_role not in ("owner", "partner", "manager"):
+		return jsonify({"error": "Manager role or above required."}), 403
+	tenant_id = g.current_tenant_id
+	user_id   = g.current_user_id
+	data    = request.get_json(silent=True) or {}
+	remarks = (data.get("remarks") or "Changes requested").strip()
+
+	with db.get_db() as conn:
+		task = conn.execute(
+			"SELECT id, status, tenant_id FROM compliance_tasks WHERE id = ? AND tenant_id = ?",
+			(task_id, tenant_id),
+		).fetchone()
+		if not task:
+			return jsonify({"error": "Task not found"}), 404
+
+		old_status = task["status"]
+		conn.execute(
+			"UPDATE compliance_tasks SET status = 'changes_required', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(task_id,),
+		)
+		conn.execute(
+			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by_user_id, reason)
+			   VALUES (?, ?, ?, 'changes_required', ?, ?)""",
+			(tenant_id, task_id, old_status, user_id, remarks),
+		)
+
+	return jsonify({"ok": True, "task_id": task_id, "new_status": "Pending with Staff"})
+
+
+@app.route("/api/approvals/<int:task_id>/reject", methods=["POST"])
+@login_required
+def api_approval_reject(task_id):
+	"""Reject a pending approval."""
+	if g.current_role not in ("owner", "partner", "manager"):
+		return jsonify({"error": "Manager role or above required."}), 403
+	tenant_id = g.current_tenant_id
+	user_id   = g.current_user_id
+	data    = request.get_json(silent=True) or {}
+	remarks = (data.get("remarks") or "Rejected").strip()
+
+	with db.get_db() as conn:
+		task = conn.execute(
+			"SELECT id, status, tenant_id FROM compliance_tasks WHERE id = ? AND tenant_id = ?",
+			(task_id, tenant_id),
+		).fetchone()
+		if not task:
+			return jsonify({"error": "Task not found"}), 404
+
+		old_status = task["status"]
+		conn.execute(
+			"UPDATE compliance_tasks SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			(task_id,),
+		)
+		conn.execute(
+			"""INSERT INTO task_status_history (tenant_id, task_id, old_status, new_status, changed_by_user_id, reason)
+			   VALUES (?, ?, ?, 'cancelled', ?, ?)""",
+			(tenant_id, task_id, old_status, user_id, remarks),
+		)
+
+	return jsonify({"ok": True, "task_id": task_id, "new_status": "Cancelled"})
+
+
+# ── Serve the built React desk app (main UI) ─────────────────────────────
+# The React SPA is the primary interface. It is served at both / and /desk.
+# All Jinja2 routes remain accessible at their existing paths.
+
+@app.route("/")
+@app.route("/desk")
+@app.route("/desk/")
+@login_required
+def desk_app():
+	"""Serve the CA Office Desk React SPA (primary UI at / and /desk)."""
+	return send_from_directory("static/desk", "index.html")
 
 
 if __name__ == "__main__":

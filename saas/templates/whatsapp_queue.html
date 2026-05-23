@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}WhatsApp Queue — CA Assist{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="mb-2">WhatsApp Queue</h1>
+  <p class="text-muted">Review and send WhatsApp messages queued from reviewed communication drafts.</p>
+
+  {% if not provider_configured %}
+  <div class="alert alert-warning mb-3">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>WhatsApp provider not configured.</strong>
+    Set <code>WHATSAPP_PROVIDER</code> and the matching credentials
+    (<code>TWILIO_ACCOUNT_SID</code>/<code>TWILIO_AUTH_TOKEN</code>/<code>TWILIO_WHATSAPP_FROM</code>
+    for Twilio, or <code>WHATSAPP_PHONE_ID</code>/<code>WHATSAPP_API_TOKEN</code> for Meta Cloud API).
+  </div>
+  {% endif %}
+
+  <!-- KPI Cards -->
+  <div class="row mb-4">
+    <div class="col-md-2 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Total</div>
+          <div class="h3 mb-0">{{ summary.total or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-2 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Queued</div>
+          <div class="h3 mb-0 text-warning">{{ summary.queued_count or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-2 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Approved</div>
+          <div class="h3 mb-0 text-info">{{ summary.approved_count or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-2 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Sent</div>
+          <div class="h3 mb-0 text-success">{{ summary.sent_count or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-2 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Failed</div>
+          <div class="h3 mb-0 text-danger">{{ summary.failed_count or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-2 col-sm-6 mb-2">
+      <div class="card h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">This Month</div>
+          <div class="h3 mb-0">{{ summary.queued_this_month or 0 }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-md-3">
+      <select name="status" class="form-select form-select-sm">
+        <option value="">All Statuses</option>
+        <option value="queued" {{ 'selected' if filters.status == 'queued' }}>Queued</option>
+        <option value="approved_to_send" {{ 'selected' if filters.status == 'approved_to_send' }}>Approved</option>
+        <option value="sent" {{ 'selected' if filters.status == 'sent' }}>Sent</option>
+        <option value="failed" {{ 'selected' if filters.status == 'failed' }}>Failed</option>
+        <option value="cancelled" {{ 'selected' if filters.status == 'cancelled' }}>Cancelled</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+      <a href="{{ url_for('whatsapp_queue_list') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+    </div>
+  </form>
+
+  <!-- Queue Table -->
+  {% if items %}
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Client</th>
+          <th>Task</th>
+          <th>To Phone</th>
+          <th>Status</th>
+          <th>Provider</th>
+          <th>Queued At</th>
+          <th>Sent At</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>{{ item.id }}</td>
+          <td>{{ item.client_name or '—' }}</td>
+          <td>{{ item.task_title or '—' }}</td>
+          <td>{{ item.to_phone }}</td>
+          <td>
+            {% if item.status == 'queued' %}
+              <span class="badge bg-warning text-dark">Queued</span>
+            {% elif item.status == 'approved_to_send' %}
+              <span class="badge bg-info">Approved</span>
+            {% elif item.status == 'sent' %}
+              <span class="badge bg-success">Sent</span>
+            {% elif item.status == 'failed' %}
+              <span class="badge bg-danger">Failed</span>
+            {% elif item.status == 'cancelled' %}
+              <span class="badge bg-secondary">Cancelled</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ item.status }}</span>
+            {% endif %}
+          </td>
+          <td>{{ item.provider or '—' }}</td>
+          <td>{{ item.queued_at or '—' }}</td>
+          <td>{{ item.sent_at or '—' }}</td>
+          <td>
+            <a href="{{ url_for('whatsapp_queue_detail', queue_id=item.id) }}" class="btn btn-outline-primary btn-sm">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-secondary">No WhatsApp queue items found.</div>
+  {% endif %}
+</div>
+{% endblock %}

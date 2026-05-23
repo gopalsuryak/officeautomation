@@ -44,6 +44,8 @@ def get_db():
     conn.row_factory = sqlite3.Row
     # Enforce foreign-key constraints for this connection.
     conn.execute("PRAGMA foreign_keys = ON")
+    # M-02 fix: Enable WAL mode for better concurrent read/write performance
+    conn.execute("PRAGMA journal_mode = WAL")
     try:
         yield conn
         conn.commit()
@@ -200,6 +202,7 @@ def init_db():
                 output_markdown         TEXT,
                 raw_json                TEXT,
                 paperclip_comment_id    TEXT,
+                paperclip_run_id        TEXT,
                 created_at              TEXT DEFAULT CURRENT_TIMESTAMP
             );
         """)
@@ -644,6 +647,14 @@ def init_db():
         if "provider_setting_id" not in email_queue_columns:
             conn.execute("ALTER TABLE email_send_queue ADD COLUMN provider_setting_id INTEGER")
 
+        # Backward-compatible column add for ai_outputs (added in production readiness phase)
+        ai_output_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(ai_outputs)").fetchall()
+        }
+        if "paperclip_run_id" not in ai_output_columns:
+            conn.execute("ALTER TABLE ai_outputs ADD COLUMN paperclip_run_id TEXT")
+
         # Indexes for email_send_queue
         conn.executescript("""
             CREATE INDEX IF NOT EXISTS idx_email_send_queue_tenant_status_queued_at
@@ -816,6 +827,9 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_ai_outputs_tenant_task
                 ON ai_outputs(tenant_id, task_id);
 
+            CREATE INDEX IF NOT EXISTS idx_ai_outputs_tenant_run
+                ON ai_outputs(tenant_id, paperclip_run_id);
+
             CREATE INDEX IF NOT EXISTS idx_document_requests_tenant_task_status
                 ON document_requests(tenant_id, task_id, status);
 
@@ -833,6 +847,18 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_client_credentials_tenant_portal_status
                 ON client_credentials(tenant_id, portal_type, status);
+
+            CREATE INDEX IF NOT EXISTS idx_task_comments_tenant_task_created
+                ON task_comments(tenant_id, task_id, created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_gst_reconciliation_runs_tenant_client_status
+                ON gst_reconciliation_runs(tenant_id, client_entity_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_gst_reconciliation_results_tenant_run
+                ON gst_reconciliation_results(tenant_id, reconciliation_run_id);
+
+            CREATE INDEX IF NOT EXISTS idx_gstr3b_review_packs_tenant_task
+                ON gstr3b_review_packs(tenant_id, linked_task_id);
 
             CREATE INDEX IF NOT EXISTS idx_accounting_connections_tenant_client
                 ON accounting_connections(tenant_id, client_entity_id);
@@ -907,8 +933,133 @@ def init_db():
                 ON gstr3b_review_packs(tenant_id, linked_task_id);
         """)
 
+        # ── Wave 14: WhatsApp Send Queue ──────────────────────────────────
+        # 31. whatsapp_send_queue — queued WhatsApp messages for manual approval
+        # status: queued, approved_to_send, sent, failed, cancelled
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS whatsapp_send_queue (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id           INTEGER NOT NULL,
+                client_entity_id    INTEGER NOT NULL,
+                task_id             INTEGER,
+                draft_id            INTEGER NOT NULL,
+                to_phone            TEXT NOT NULL,
+                body                TEXT NOT NULL,
+                media_url           TEXT,
+                status              TEXT NOT NULL DEFAULT 'queued',
+                provider            TEXT,
+                provider_message_id TEXT,
+                queued_by           INTEGER,
+                queued_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+                sent_at             TEXT,
+                failed_at           TEXT,
+                error_message       TEXT,
+                metadata_json       TEXT,
+                created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
 
-# ---------------------------------------------------------------------------
+        conn.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_send_queue_tenant_status_queued_at
+                ON whatsapp_send_queue(tenant_id, status, queued_at);
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_send_queue_tenant_client_queued_at
+                ON whatsapp_send_queue(tenant_id, client_entity_id, queued_at);
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_send_queue_tenant_draft_id
+                ON whatsapp_send_queue(tenant_id, draft_id);
+        """)
+
+        # Backward-compatible column add for existing installations
+        wa_queue_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(whatsapp_send_queue)").fetchall()
+        }
+        if "media_url" not in wa_queue_columns:
+            conn.execute("ALTER TABLE whatsapp_send_queue ADD COLUMN media_url TEXT")
+        if "provider_message_id" not in wa_queue_columns:
+            conn.execute("ALTER TABLE whatsapp_send_queue ADD COLUMN provider_message_id TEXT")
+
+        # ── Wave 15: Works + Work Events (Human+Agent Workspace) ──────────
+        # Unified Work object: replaces the conceptual fragmentation of tasks,
+        # email_queue items, document drafts, GST review packs as separate surfaces.
+        # Works are additive — existing tables are untouched; this is a new top-level
+        # entity that can optionally link to an existing compliance_task.
+        #
+        # doer_kind: 'person' | 'agent'
+        # status: new | in_progress | proposed | in_review | changes_requested |
+        #         released | filed | rejected
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS works (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id           INTEGER NOT NULL REFERENCES tenants(id),
+                client_entity_id    INTEGER REFERENCES client_entities(id),
+                linked_task_id      INTEGER REFERENCES compliance_tasks(id),
+                kind                TEXT NOT NULL DEFAULT 'task',
+                title               TEXT NOT NULL,
+                description         TEXT,
+                status              TEXT NOT NULL DEFAULT 'new',
+                priority            TEXT NOT NULL DEFAULT 'normal',
+                due_date            TEXT,
+                doer_kind           TEXT NOT NULL DEFAULT 'person',
+                doer_id             INTEGER,
+                authorizer_user_id  INTEGER REFERENCES users(id),
+                agent_key           TEXT,
+                agent_confidence    REAL,
+                outcome_kind        TEXT,
+                outcome_ref         TEXT,
+                created_by          INTEGER REFERENCES users(id),
+                created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_works_tenant_status
+                ON works(tenant_id, status);
+            CREATE INDEX IF NOT EXISTS idx_works_tenant_doer
+                ON works(tenant_id, doer_kind, doer_id);
+            CREATE INDEX IF NOT EXISTS idx_works_tenant_authorizer
+                ON works(tenant_id, authorizer_user_id);
+            CREATE INDEX IF NOT EXISTS idx_works_tenant_client_due
+                ON works(tenant_id, client_entity_id, due_date);
+        """)
+
+        # work_events — the unified thread: system events, comments, agent runs,
+        # outcome records.  Immutable rows — never updated.
+        # event_kind: system | comment | agent_run | outcome | escalation
+        # actor_kind: person | agent | system
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS work_events (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id     INTEGER NOT NULL REFERENCES tenants(id),
+                work_id       INTEGER NOT NULL REFERENCES works(id),
+                event_kind    TEXT NOT NULL DEFAULT 'comment',
+                actor_kind    TEXT NOT NULL DEFAULT 'person',
+                actor_id      INTEGER,
+                agent_key     TEXT,
+                body          TEXT,
+                metadata_json TEXT,
+                created_at    TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_work_events_tenant_work_created
+                ON work_events(tenant_id, work_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_work_events_tenant_actor
+                ON work_events(tenant_id, actor_kind, actor_id);
+        """)
+
+        # ── Wave 15b: job tracking columns on works ────────────────────────
+        # Backward-compat ALTER — safe to re-run (IGNORE if column exists).
+        works_cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(works)").fetchall()
+        }
+        if "rq_job_id" not in works_cols:
+            conn.execute("ALTER TABLE works ADD COLUMN rq_job_id TEXT")
+        if "rq_job_status" not in works_cols:
+            conn.execute(
+                "ALTER TABLE works ADD COLUMN rq_job_status TEXT DEFAULT 'idle'"
+            )
+        if "rq_queued_at" not in works_cols:
+            conn.execute("ALTER TABLE works ADD COLUMN rq_queued_at TEXT")
 # Helper functions
 # ---------------------------------------------------------------------------
 
@@ -1030,3 +1181,62 @@ def touch_updated_at(conn, table_name: str, row_id: int) -> None:
         f"UPDATE {table_name} SET updated_at = ? WHERE id = ?",  # noqa: S608
         (datetime.now(timezone.utc).isoformat(), row_id),
     )
+
+
+# ---------------------------------------------------------------------------
+# Pagination helper (M-01 fix)
+# ---------------------------------------------------------------------------
+
+def paginate_query(
+    conn,
+    base_query: str,
+    params: tuple,
+    page: int = 1,
+    per_page: int = 50,
+    count_query: str | None = None,
+) -> dict:
+    """
+    Paginate a SQL query. Returns dict with:
+      - items: list of rows
+      - total: total count
+      - page: current page
+      - per_page: items per page
+      - total_pages: ceil(total / per_page)
+      - has_next: bool
+      - has_prev: bool
+
+    Usage:
+        result = paginate_query(
+            conn,
+            "SELECT * FROM compliance_tasks WHERE tenant_id = ? ORDER BY id DESC",
+            (tenant_id,),
+            page=int(request.args.get("page", 1)),
+        )
+        return render_template("tasks.html", **result)
+    """
+    page = max(1, int(page))
+    per_page = max(1, min(int(per_page), 200))  # cap at 200
+    offset = (page - 1) * per_page
+
+    # Get total count
+    if count_query:
+        total = conn.execute(count_query, params).fetchone()[0]
+    else:
+        count_sql = f"SELECT COUNT(*) FROM ({base_query}) AS subquery"
+        total = conn.execute(count_sql, params).fetchone()[0]
+
+    # Get page items
+    paginated_query = f"{base_query} LIMIT ? OFFSET ?"
+    items = conn.execute(paginated_query, (*params, per_page, offset)).fetchall()
+
+    total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
+    }

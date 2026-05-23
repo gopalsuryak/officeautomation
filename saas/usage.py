@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import db
 import plans
 
 
 def current_period_month():
-    return datetime.now().strftime("%Y-%m")
+    return datetime.now(timezone.utc).strftime("%Y-%m")
 
 
 def _get_tenant_plan(conn, tenant_id):
@@ -225,4 +225,79 @@ def check_user_limit(tenant_id):
         if int(active_users or 0) >= int(limits["max_users"]):
             raise ValueError(
                 "User limit reached for your current plan. Please upgrade to add more users."
+            )
+
+
+def _get_rate_window_start(window_minutes):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(minutes=window_minutes)
+    return window_start.isoformat()
+
+
+def check_hourly_ai_rate_limit(tenant_id):
+    """
+    Check if tenant is within hourly AI task rate limit.
+    Raises ValueError if limit is exceeded.
+    """
+    with db.get_db() as conn:
+        plan = _get_tenant_plan(conn, tenant_id)
+        limits = plans.get_plan_limits(plan)
+        max_per_hour = limits.get("max_ai_tasks_per_hour", 10)
+        
+        if not max_per_hour:
+            return  # No rate limit configured
+        
+        # Check usage in last hour from task_status_history
+        window_start = _get_rate_window_start(60)
+        
+        recent_count = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM task_status_history
+            WHERE tenant_id = ?
+              AND new_status IN ('ai_queued', 'ai_processing')
+              AND created_at >= ?
+            """,
+            (tenant_id, window_start),
+        ).fetchone()["c"]
+        
+        if int(recent_count or 0) >= int(max_per_hour):
+            raise ValueError(
+                f"Hourly AI task rate limit exceeded ({max_per_hour} tasks/hour). "
+                "Please wait before submitting more AI tasks."
+            )
+
+
+def check_daily_connector_rate_limit(tenant_id):
+    """
+    Check if tenant is within daily connector run rate limit.
+    Raises ValueError if limit is exceeded.
+    """
+    with db.get_db() as conn:
+        plan = _get_tenant_plan(conn, tenant_id)
+        limits = plans.get_plan_limits(plan)
+        max_per_day = limits.get("max_connector_runs_per_day", 5)
+        
+        if not max_per_day:
+            return  # No rate limit configured
+        
+        # Check usage today from audit_logs
+        today_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        
+        recent_count = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM audit_logs
+            WHERE tenant_id = ?
+              AND action LIKE 'connector_run_%'
+              AND created_at >= ?
+            """,
+            (tenant_id, today_start),
+        ).fetchone()["c"]
+        
+        if int(recent_count or 0) >= int(max_per_day):
+            raise ValueError(
+                f"Daily connector rate limit exceeded ({max_per_day} runs/day). "
+                "Please try again tomorrow."
             )

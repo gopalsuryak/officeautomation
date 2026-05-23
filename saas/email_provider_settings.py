@@ -33,12 +33,6 @@ def _sanitize_provider_row(row):
     return item
 
 
-def mask_secret(value):
-    if not value:
-        return "Not stored"
-    return "Stored / hidden"
-
-
 def create_provider_setting(tenant_id, payload, user_id=None, ip_address=None):
     provider_type = _clean((payload or {}).get("provider_type")).lower()
     if provider_type not in PROVIDER_TYPES:
