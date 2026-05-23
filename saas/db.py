@@ -44,6 +44,8 @@ def get_db():
     conn.row_factory = sqlite3.Row
     # Enforce foreign-key constraints for this connection.
     conn.execute("PRAGMA foreign_keys = ON")
+    # M-02 fix: Enable WAL mode for better concurrent read/write performance
+    conn.execute("PRAGMA journal_mode = WAL")
     try:
         yield conn
         conn.commit()
@@ -1100,3 +1102,62 @@ def touch_updated_at(conn, table_name: str, row_id: int) -> None:
         f"UPDATE {table_name} SET updated_at = ? WHERE id = ?",  # noqa: S608
         (datetime.now(timezone.utc).isoformat(), row_id),
     )
+
+
+# ---------------------------------------------------------------------------
+# Pagination helper (M-01 fix)
+# ---------------------------------------------------------------------------
+
+def paginate_query(
+    conn,
+    base_query: str,
+    params: tuple,
+    page: int = 1,
+    per_page: int = 50,
+    count_query: str | None = None,
+) -> dict:
+    """
+    Paginate a SQL query. Returns dict with:
+      - items: list of rows
+      - total: total count
+      - page: current page
+      - per_page: items per page
+      - total_pages: ceil(total / per_page)
+      - has_next: bool
+      - has_prev: bool
+
+    Usage:
+        result = paginate_query(
+            conn,
+            "SELECT * FROM compliance_tasks WHERE tenant_id = ? ORDER BY id DESC",
+            (tenant_id,),
+            page=int(request.args.get("page", 1)),
+        )
+        return render_template("tasks.html", **result)
+    """
+    page = max(1, int(page))
+    per_page = max(1, min(int(per_page), 200))  # cap at 200
+    offset = (page - 1) * per_page
+
+    # Get total count
+    if count_query:
+        total = conn.execute(count_query, params).fetchone()[0]
+    else:
+        count_sql = f"SELECT COUNT(*) FROM ({base_query}) AS subquery"
+        total = conn.execute(count_sql, params).fetchone()[0]
+
+    # Get page items
+    paginated_query = f"{base_query} LIMIT ? OFFSET ?"
+    items = conn.execute(paginated_query, (*params, per_page, offset)).fetchall()
+
+    total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
+    }

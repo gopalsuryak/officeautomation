@@ -17,6 +17,12 @@
   let latestPreview = null;
   let recognition = null;
 
+  // B-02 fix: Get CSRF token from meta tag
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : "";
+  }
+
   function updatePreview(preview) {
     latestPreview = preview || null;
     previewIntent.textContent = (preview && preview.intent) || "-";
@@ -49,7 +55,10 @@
     try {
       const response = await fetch("/voice-assistant/parse", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken(),
+        },
         body: JSON.stringify({ command_text: commandText }),
       });
       const payload = await response.json();
@@ -71,7 +80,10 @@
     try {
       const response = await fetch("/voice-assistant/execute", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken(),
+        },
         body: JSON.stringify(latestPreview),
       });
       const payload = await response.json();

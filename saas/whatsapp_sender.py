@@ -70,7 +70,7 @@ def is_whatsapp_configured() -> bool:
 # Phone number normalisation
 # ---------------------------------------------------------------------------
 
-def _normalise_phone(phone: str) -> str:
+def normalise_phone(phone: str) -> str:
     """
     Strip non-digit characters, ensure E.164 with leading '+'.
     Raises ValueError on clearly invalid numbers.
@@ -86,6 +86,10 @@ def _normalise_phone(phone: str) -> str:
     if len(digit_only) < 7 or len(digit_only) > 15:
         raise ValueError(f"Invalid phone number: {phone!r}")
     return digits
+
+
+# L-01 fix: Keep underscore version as alias for backward compatibility
+_normalise_phone = normalise_phone
 
 
 # ---------------------------------------------------------------------------

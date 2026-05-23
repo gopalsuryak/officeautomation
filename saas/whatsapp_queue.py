@@ -77,7 +77,7 @@ def queue_whatsapp_from_draft(
         raise ValueError("Recipient phone number is required.")
 
     # Validate phone normalisation early
-    normalised_phone = whatsapp_sender._normalise_phone(to_phone)
+    normalised_phone = whatsapp_sender.normalise_phone(to_phone)
 
     with db.get_db() as conn:
         draft = conn.execute(

@@ -49,19 +49,14 @@ from orchestrator import get_orchestrator
 
 app = Flask(__name__)
 
+# B-03 fix: Prevent DoS via large upload body buffering
+# Flask will return 413 before reading the body into memory
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 32 MB max upload
 
+
+# G-06 fix: Simplified flash() - let messages through, only catch raw exception text
+# Error handlers already sanitize exceptions before calling flash()
 def flash(message, category="message"):
-    if isinstance(message, Exception):
-        message = "Action failed. Please review the inputs and try again."
-    elif isinstance(message, str):
-        lowered = message.lower()
-        # Only sanitize actual Python exception text, not legitimate user messages
-        if category in {"warning", "danger", "error"} and (
-            "traceback" in lowered
-            or "exception" in lowered
-            or (": " in message and ("traceback" in lowered or "exception" in lowered))
-        ):
-            message = "Action failed. Please review the inputs and try again."
     return flask_flash(message, category)
 
 
@@ -2733,14 +2728,29 @@ def _not_found(_error):
 
 @app.errorhandler(ValueError)
 def _value_error(error):
-	flash(str(error), "warning")
-	return redirect(request.referrer or url_for("dashboard")), 400
+    # Don't expose raw ValueError messages - log instead
+    import logging
+    logging.warning(f"Validation error: {error}")
+    flash("Invalid input. Please check your data and try again.", "warning")
+    return redirect(request.referrer or url_for("dashboard")), 400
 
 
 @app.errorhandler(sqlite3.OperationalError)
 def _db_error(error):
-	flash(f"Database error: {error}", "danger")
-	return redirect(request.referrer or url_for("dashboard")), 500
+    # G-04 fix: Don't expose raw DB errors to users - log instead
+    import logging
+    logging.exception("Database error occurred")
+    flash("A database error occurred. Please try again or contact support.", "danger")
+    return redirect(request.referrer or url_for("dashboard")), 500
+
+
+@app.errorhandler(Exception)
+def _catch_all(error):
+    """G-04 fix: Generic catch-all for any unhandled exceptions."""
+    import logging
+    logging.exception("Unhandled exception occurred")
+    flash("An unexpected error occurred. Please try again or contact support.", "danger")
+    return redirect(request.referrer or url_for("dashboard")), 500
 
 
 # ============================================================
