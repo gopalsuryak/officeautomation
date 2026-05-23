@@ -3259,6 +3259,150 @@ def work_reject(work_id):
 	return redirect(url_for("work_detail", work_id=work_id))
 
 
+# ── Background agent job: enqueue + status ─────────────────────────────────
+
+def _get_redis_conn():
+	"""Return a Redis connection or None if Redis / rq are not available."""
+	redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+	try:
+		import redis as _redis_lib
+		conn = _redis_lib.from_url(redis_url)
+		conn.ping()
+		return conn
+	except Exception:
+		return None
+
+
+@app.post("/work/<int:work_id>/run")
+@login_required
+def work_run_agent(work_id):
+	"""Enqueue the Work item's agent automation as a background RQ job."""
+	tenant_id = g.current_tenant_id
+	user_id = g.current_user_id
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, agent_key, rq_job_status FROM works WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id),
+		).fetchone()
+		if not w:
+			flash("Work item not found.", "warning")
+			return redirect(url_for("work_list"))
+
+		if not w["agent_key"]:
+			flash("This Work item has no agent assigned (agent_key is empty).", "warning")
+			return redirect(url_for("work_detail", work_id=work_id))
+
+		if w["rq_job_status"] == "running":
+			flash("Agent is already running for this Work item.", "info")
+			return redirect(url_for("work_detail", work_id=work_id))
+
+	redis_conn = _get_redis_conn()
+	if redis_conn is None:
+		# ── No Redis: run synchronously in-process (browser must stay open) ──
+		flash(
+			"Redis is not running — executing agent synchronously. "
+			"The page will load when the job completes. "
+			"Start Redis + python worker.py for true background execution.",
+			"warning",
+		)
+		import threading
+		from tasks.ai_task import run_work_agent
+
+		def _run():
+			try:
+				run_work_agent(tenant_id, work_id)
+			except Exception:
+				pass  # already logged + DB written inside run_work_agent
+
+		t = threading.Thread(target=_run, daemon=True)
+		t.start()
+		# Don't block — return immediately; user can refresh
+		return redirect(url_for("work_detail", work_id=work_id))
+
+	# ── Redis available: enqueue with RQ ─────────────────────────────────
+	try:
+		from rq import Queue
+		from tasks.ai_task import run_work_agent
+
+		queue = Queue("ca_agent", connection=redis_conn)
+		job = queue.enqueue(
+			run_work_agent,
+			tenant_id,
+			work_id,
+			job_timeout=7200,       # 2 hours max
+			result_ttl=86400,       # keep result 24 h
+			failure_ttl=86400,
+		)
+		with db.get_db() as conn:
+			conn.execute(
+				"""UPDATE works
+				   SET rq_job_id = ?,
+				       rq_job_status = 'queued',
+				       rq_queued_at = CURRENT_TIMESTAMP,
+				       updated_at = CURRENT_TIMESTAMP
+				   WHERE id = ?""",
+				(job.id, work_id),
+			)
+			conn.execute(
+				"""INSERT INTO work_events
+				       (tenant_id, work_id, event_kind, actor_kind, actor_id, body)
+				   VALUES (?, ?, 'system', 'person', ?, ?)""",
+				(tenant_id, work_id, user_id,
+				 f"Agent job queued (job_id: {job.id}). Close this tab — it will run in the background."),
+			)
+		flash("Agent job queued. You can close this tab — it runs on the server.", "success")
+	except Exception as exc:  # noqa: BLE001
+		flash(f"Could not enqueue agent job: {exc}", "danger")
+
+	return redirect(url_for("work_detail", work_id=work_id))
+
+
+@app.get("/work/<int:work_id>/job-status")
+@login_required
+def work_job_status(work_id):
+	"""JSON polling endpoint — returns current rq_job_status + last event snippet."""
+	tenant_id = g.current_tenant_id
+
+	with db.get_db() as conn:
+		w = conn.execute(
+			"SELECT id, status, rq_job_id, rq_job_status, rq_queued_at FROM works "
+			"WHERE id = ? AND tenant_id = ?",
+			(work_id, tenant_id),
+		).fetchone()
+		if not w:
+			return jsonify({"error": "not found"}), 404
+
+		last_event = conn.execute(
+			"""SELECT body, event_kind, created_at FROM work_events
+			   WHERE tenant_id = ? AND work_id = ?
+			   ORDER BY created_at DESC LIMIT 1""",
+			(tenant_id, work_id),
+		).fetchone()
+
+	# Optionally cross-check live RQ job status
+	rq_live_status = None
+	if w["rq_job_id"]:
+		try:
+			import redis as _redis_lib
+			from rq.job import Job
+			redis_conn = _get_redis_conn()
+			if redis_conn:
+				job = Job.fetch(w["rq_job_id"], connection=redis_conn)
+				rq_live_status = job.get_status().value if job else None
+		except Exception:
+			pass
+
+	return jsonify({
+		"work_id": work_id,
+		"status": w["status"],
+		"rq_job_id": w["rq_job_id"],
+		"rq_job_status": rq_live_status or w["rq_job_status"],
+		"rq_queued_at": w["rq_queued_at"],
+		"last_event": dict(last_event) if last_event else None,
+	})
+
+
 # ── Team → Agents ──────────────────────────────────────────────────────────
 
 def _build_agent_list():

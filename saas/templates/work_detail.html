@@ -231,7 +231,27 @@
     {% else %}
     <div class="card p-3 mb-3">
       <h6 class="fw-semibold mb-2" style="font-size:.85rem;">Actions</h6>
+      {% if work.doer_kind == 'agent' and work.agent_key and work.status in ['new','changes_requested'] %}
+      <form method="post" action="{{ url_for('work_run_agent', work_id=work.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm w-100 mb-2"
+                style="background:var(--agent);color:#fff;border:none;">
+          <i class="bi bi-play-fill me-1"></i>Run Agent
+        </button>
+      </form>
+      <p style="font-size:.78rem;color:var(--muted);" class="mb-0">
+        <i class="bi bi-info-circle me-1"></i>
+        Runs in background — you can close this tab.
+      </p>
+      {% elif work.rq_job_status in ['queued','running'] %}
+      <div id="jobStatusBadge" class="alert alert-info p-2 mb-2" style="font-size:.8rem;">
+        <i class="bi bi-arrow-repeat me-1" id="spinIcon"></i>
+        <span id="jobStatusText">Agent {{ work.rq_job_status }}…</span>
+      </div>
+      <p style="font-size:.78rem;color:var(--muted);" class="mb-0">Page refreshes automatically.</p>
+      {% else %}
       <p class="text-muted mb-0" style="font-size:.82rem;">No actions available for status: <strong>{{ work.status|replace('_',' ') }}</strong></p>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -252,5 +272,35 @@
   // Auto-scroll thread to bottom
   const tb = document.getElementById('threadBody');
   if (tb) tb.scrollTop = tb.scrollHeight;
+
+  // ── Job status polling ───────────────────────────────────────────────
+  (function () {
+    const POLL_INTERVAL = 5000; // 5 s
+    const badge = document.getElementById('jobStatusBadge');
+    const statusText = document.getElementById('jobStatusText');
+    if (!badge) return; // only poll when job is running/queued
+
+    function poll() {
+      fetch('{{ url_for("work_job_status", work_id=work.id) }}')
+        .then(r => r.json())
+        .then(data => {
+          const s = data.rq_job_status || '';
+          statusText.textContent = 'Agent ' + s + '\u2026';
+          if (s === 'done' || data.status === 'proposed') {
+            // Job finished — reload to show proposal
+            window.location.reload();
+          } else if (s === 'failed') {
+            badge.className = 'alert alert-danger p-2 mb-2';
+            statusText.textContent = 'Agent job failed — see thread for details.';
+            document.getElementById('spinIcon').className = 'bi bi-x-circle me-1';
+          } else {
+            setTimeout(poll, POLL_INTERVAL);
+          }
+        })
+        .catch(() => setTimeout(poll, POLL_INTERVAL));
+    }
+
+    setTimeout(poll, POLL_INTERVAL);
+  })();
 </script>
 {% endblock %}

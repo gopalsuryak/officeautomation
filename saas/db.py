@@ -1046,8 +1046,20 @@ def init_db():
                 ON work_events(tenant_id, actor_kind, actor_id);
         """)
 
-
-# ---------------------------------------------------------------------------
+        # ── Wave 15b: job tracking columns on works ────────────────────────
+        # Backward-compat ALTER — safe to re-run (IGNORE if column exists).
+        works_cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(works)").fetchall()
+        }
+        if "rq_job_id" not in works_cols:
+            conn.execute("ALTER TABLE works ADD COLUMN rq_job_id TEXT")
+        if "rq_job_status" not in works_cols:
+            conn.execute(
+                "ALTER TABLE works ADD COLUMN rq_job_status TEXT DEFAULT 'idle'"
+            )
+        if "rq_queued_at" not in works_cols:
+            conn.execute("ALTER TABLE works ADD COLUMN rq_queued_at TEXT")
 # Helper functions
 # ---------------------------------------------------------------------------
 
